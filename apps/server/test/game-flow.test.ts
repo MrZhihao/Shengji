@@ -1,0 +1,179 @@
+/** 集成测试：一个真人客户端加机器人，通过 WebSocket 打完两局。 */
+import { afterAll, beforeAll, expect, it } from 'vitest';
+import WebSocket from 'ws';
+import {
+  RANKS, SUITS, applyAction, createRng, decompose, generateFollow, groupOf, type Card, type PlayerView,
+} from '@shengji/engine';
+import type { ClientMessage, ServerMessage } from '@shengji/protocol';
+import { startServer, type RunningServer } from '../src/server.ts';
+
+let server: RunningServer;
+
+beforeAll(async () => {
+  server = await startServer({ port: 0, host: '127.0.0.1', serveStatic: false, roomOptions: { dealIntervalMs: 2, declareGraceMs: 30, botDelayMs: 2 } });
+});
+afterAll(async () => { await server.close(); });
+
+class Client {
+  readonly ws: WebSocket;
+  readonly inbox: ServerMessage[] = [];
+  private queue: ServerMessage[] = [];
+  private waiter: ((m: ServerMessage) => void) | null = null;
+  constructor(port: number) {
+    this.ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    this.ws.on('message', (d) => {
+      const m = JSON.parse(d.toString()) as ServerMessage;
+      this.inbox.push(m);
+      if (this.waiter) { const w = this.waiter; this.waiter = null; w(m); }
+      else this.queue.push(m);
+    });
+  }
+  open(): Promise<void> { return new Promise((r) => this.ws.once('open', () => r())); }
+  send(m: ClientMessage): void { this.ws.send(JSON.stringify(m)); }
+  /** 按到达顺序逐条取消息，不会漏掉同一帧里连续到达的多条 */
+  next(timeoutMs = 5000): Promise<ServerMessage> {
+    const queued = this.queue.shift();
+    if (queued) return Promise.resolve(queued);
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => { this.waiter = null; reject(new Error('等待消息超时')); }, timeoutMs);
+      this.waiter = (m) => { clearTimeout(t); resolve(m); };
+    });
+  }
+  async until<T extends ServerMessage>(pred: (m: ServerMessage) => m is T, timeoutMs = 8000): Promise<T> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      let m: ServerMessage;
+      try {
+        m = await this.next(Math.max(1, deadline - Date.now()));
+      } catch (err) {
+        throw new Error(`${(err as Error).message}；收到过：${this.inbox.map(summary).join(' ')}`);
+      }
+      if (pred(m)) return m;
+    }
+  }
+}
+
+function summary(m: ServerMessage): string {
+  if (m.t === 'state') return `state:${m.view.phase}`;
+  if (m.t === 'room') return `room:${m.room ? m.room.seats.map((x) => x?.name ?? '_').join(',') : 'null'}`;
+  if (m.t === 'error') return `error:${m.code}`;
+  return m.t;
+}
+
+const isState = (m: ServerMessage): m is Extract<ServerMessage, { t: 'state' }> => m.t === 'state';
+const isRoom = (m: ServerMessage): m is Extract<ServerMessage, { t: 'room' }> => m.t === 'room';
+
+function decide(view: PlayerView, rng = createRng('client')): ClientMessage | null {
+  const me = view.seat;
+  const ctx = { level: view.level, trumpSuit: view.trumpSuit };
+  if (view.phase === 'bottom' && view.dealer === me) {
+    return { t: 'exchangeBottom', cards: view.hand.slice(0, view.config.bottomSize).map((c) => c.id) };
+  }
+  if (view.phase === 'callFriend' && view.dealer === me) {
+    const suit = SUITS.find((s) => s !== view.trumpSuit)!;
+    const ranks = RANKS.filter((r) => r !== view.level);
+    return { t: 'callFriend', calls: Array.from({ length: view.config.friendCount }, (_, i) => ({ suit, rank: ranks[i] as number, nth: 1 })) };
+  }
+  if (view.phase === 'playing' && view.currentTurn === me) {
+    let cards: Card[];
+    if (view.trick && view.trick.plays.length > 0 && view.trick.lead) {
+      cards = generateFollow(view.trick.lead, view.hand, ctx, rng);
+    } else {
+      const groups = new Map<string, Card[]>();
+      for (const c of view.hand) groups.set(groupOf(c, ctx), [...(groups.get(groupOf(c, ctx)) ?? []), c]);
+      const g = [...groups.values()][0] as Card[];
+      const d = decompose(g, ctx)!;
+      cards = [...(d.components[d.components.length - 1] as { cards: readonly Card[] }).cards];
+    }
+    return { t: 'play', cards: cards.map((c) => c.id) };
+  }
+  return null;
+}
+
+it('真人 + 5 个机器人通过 WebSocket 打完两局', async () => {
+  const c = new Client(server.port);
+  await c.open();
+  c.send({ t: 'hello', name: '测试员' });
+  const welcome = await c.next();
+  expect(welcome.t).toBe('welcome');
+  expect((await c.next()).t).toBe('room'); // 未在房间：room null
+  c.send({ t: 'createRoom', players: 6 });
+  let room = await c.until(isRoom);
+  expect(room.room?.code).toHaveLength(4);
+  expect(room.room?.you).toBe(0);
+  for (let seat = 1; seat < 6; seat++) c.send({ t: 'addBot', seat });
+  room = await c.until((m): m is Extract<ServerMessage, { t: 'room' }> => isRoom(m) && m.room?.seats.every(Boolean) === true);
+  c.send({ t: 'start' });
+
+  let roundsSeen = 0;
+  let lastPhase = '';
+  let replayOk = false;
+  const errors: string[] = [];
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    const m = await c.next(10_000);
+    if (m.t === 'error') { errors.push(`${m.code}: ${m.message}`); continue; }
+    if (m.t === 'replay') {
+      // 回放：从初始状态重放全部操作，应当落在本局结束
+      let st = m.replay.initial;
+      for (const a of m.replay.actions) {
+        const r = applyAction(st, a);
+        if (!r.ok) throw new Error(`回放失败 ${a.type}: ${r.error.message}`);
+        st = r.state;
+      }
+      expect(st.phase).toBe('roundEnd');
+      expect(st.round).toBe(m.replay.round);
+      expect(m.replay.names).toHaveLength(6);
+      replayOk = true;
+      c.send({ t: 'nextRound' });
+      continue;
+    }
+    if (!isState(m)) continue;
+    const v = m.view;
+    if (v.phase !== lastPhase) lastPhase = v.phase;
+    for (const e of m.events) {
+      if (e.type === 'cardDealt' && e.seat !== v.seat) expect(e.card.id).toBe('hidden');
+    }
+    if (v.phase === 'roundEnd') {
+      roundsSeen++;
+      expect(v.lastRound?.opponentPoints).toBeGreaterThanOrEqual(0);
+      expect(v.bottom).not.toBeNull();
+      if (roundsSeen >= 2) break;
+      c.send({ t: 'getReplay', round: v.round }); // 收到回放后再开下一局
+      continue;
+    }
+    if (v.phase === 'gameOver') break;
+    const a = decide(v);
+    if (a) c.send(a);
+  }
+  expect(errors).toEqual([]);
+  expect(roundsSeen).toBeGreaterThanOrEqual(2);
+  expect(replayOk).toBe(true);
+
+  // 断线重连：同一 token 重新 hello 应拿回座位和状态
+  const token = (welcome as Extract<ServerMessage, { t: 'welcome' }>).token;
+  c.ws.close();
+  const c2 = new Client(server.port);
+  await c2.open();
+  c2.send({ t: 'hello', name: '测试员' , token });
+  const w2 = await c2.next();
+  expect(w2.t).toBe('welcome');
+  const r2 = await c2.until(isRoom);
+  expect(r2.room?.you).toBe(0);
+  expect(r2.room?.started).toBe(true);
+  const s2 = await c2.until(isState);
+  expect(s2.view.seat).toBe(0);
+  c2.ws.close();
+}, 90_000);
+
+it('加入不存在的房间和开局后加入都会被拒绝', async () => {
+  const c = new Client(server.port);
+  await c.open();
+  c.send({ t: 'hello', name: '路人' });
+  await c.next();
+  await c.next();
+  c.send({ t: 'joinRoom', code: 'ZZZZ' });
+  const e = await c.next();
+  expect(e.t).toBe('error');
+  c.ws.close();
+});

@@ -1,0 +1,17 @@
+{
+  "name": "@shengji/protocol",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "前后端共享的消息 schema",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@shengji/engine": "workspace:*",
+    "zod": "^4.5.4"
+  }
+}

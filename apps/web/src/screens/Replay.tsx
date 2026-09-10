@@ -1,0 +1,112 @@
+/** 一局回放：按墩列出每个人出的牌、赢家和分数，并可展开各人起手牌。 */
+import { useMemo, useState } from 'react';
+import { applyAction, rankName, sortCards, suitName, type Card, type GameState, type Seat } from '@shengji/engine';
+import type { RoundReplay } from '@shengji/protocol';
+import { CardRow } from '../components/CardView.tsx';
+
+interface TrickView {
+  readonly no: number;
+  readonly leader: Seat;
+  readonly winner: Seat;
+  readonly points: number;
+  readonly plays: readonly { seat: Seat; cards: readonly Card[] }[];
+  readonly revealed: readonly Seat[];
+  readonly throwFailed: readonly Seat[];
+}
+
+interface Rebuilt {
+  readonly final: GameState;
+  readonly hands: readonly (readonly Card[])[];
+  readonly tricks: readonly TrickView[];
+  readonly error: string | null;
+}
+
+function rebuild(replay: RoundReplay): Rebuilt {
+  let s = replay.initial;
+  let hands: readonly (readonly Card[])[] | null = null;
+  const tricks: TrickView[] = [];
+  let revealed: Seat[] = [];
+  let throwFailed: Seat[] = [];
+  let error: string | null = null;
+  for (const a of replay.actions) {
+    const r = applyAction(s, a);
+    if (!r.ok) { error = `${a.type}: ${r.error.message}`; break; }
+    if (a.type === 'callFriend' && !hands) {
+      hands = r.state.hands.map((h) => sortCards(h, { level: r.state.level, trumpSuit: r.state.trumpSuit }));
+    }
+    for (const e of r.events) {
+      if (e.type === 'friendRevealed') revealed.push(e.seat);
+      if (e.type === 'throwFailed') throwFailed.push(e.seat);
+      if (e.type === 'trickWon') {
+        const t = r.state.tricks[r.state.tricks.length - 1]!;
+        tricks.push({ no: r.state.tricks.length, leader: t.leader, winner: t.winner, points: t.points, plays: t.plays, revealed, throwFailed });
+        revealed = [];
+        throwFailed = [];
+      }
+    }
+    s = r.state;
+  }
+  return { final: s, hands: hands ?? s.hands, tricks, error };
+}
+
+export function Replay({ replay, onClose }: { replay: RoundReplay; onClose: () => void }) {
+  const built = useMemo(() => rebuild(replay), [replay]);
+  const [showHands, setShowHands] = useState(false);
+  const name = (seat: Seat) => replay.names[seat] ?? `${seat + 1} 号`;
+  const st = built.final;
+  const team = st.dealer === null ? [] : [st.dealer, ...st.friends];
+  const roleCls = (seat: Seat) => (seat === st.dealer ? 'dealer' : team.includes(seat) ? 'friend' : 'opp');
+  const roleTxt = (seat: Seat) => (seat === st.dealer ? '庄' : team.includes(seat) ? '友' : '闲');
+  return (
+    <div className="overlay replay">
+      <div className="sheet">
+        <div className="sheet-head">
+          <div className="sheet-title">第 {replay.round} 局回放</div>
+          <button className="ghost small" onClick={onClose}>关闭</button>
+        </div>
+        <div className="hint">
+          级牌 {rankName(st.level)} · 主 {suitName(st.trumpSuit)} · 庄家 {st.dealer === null ? '—' : name(st.dealer)}
+          {st.friendCalls.length > 0 && ` · 朋友牌 ${st.friendCalls.map((c) => `第${['一', '二', '三'][c.nth - 1]}张${suitName(c.suit)}${rankName(c.rank)}`).join('、')}`}
+        </div>
+        {built.error && <div className="hint warn">回放中断：{built.error}</div>}
+        <button className="ghost small" onClick={() => setShowHands((v) => !v)}>{showHands ? '收起起手牌' : '查看各人起手牌'}</button>
+        {showHands && (
+          <div className="replay-hands">
+            {built.hands.map((h, seat) => (
+              <div key={seat} className="replay-hand">
+                <div className="rp-seat"><span className={`role ${roleCls(seat)}`}>{roleTxt(seat)}</span>{name(seat)}</div>
+                <div className="rp-cards"><CardRow cards={h} small /></div>
+              </div>
+            ))}
+            {st.bottom.length > 0 && (
+              <div className="replay-hand">
+                <div className="rp-seat">底牌</div>
+                <div className="rp-cards"><CardRow cards={st.bottom} small /></div>
+              </div>
+            )}
+          </div>
+        )}
+        <div className="tricks">
+          {built.tricks.map((t) => (
+            <div key={t.no} className="trick">
+              <div className="trick-head">
+                <span className="trick-no">第 {t.no} 墩</span>
+                <span>{name(t.winner)} 收{t.points ? `，${t.points} 分` : ''}</span>
+                {t.revealed.map((r) => <span key={r} className="tag">{name(r)} 现身</span>)}
+                {t.throwFailed.map((r) => <span key={`f${r}`} className="tag">{name(r)} 甩牌失败</span>)}
+              </div>
+              <div className="trick-plays">
+                {t.plays.map((p) => (
+                  <div key={p.seat} className={`trick-play ${p.seat === t.winner ? 'won' : ''} ${p.seat === t.leader ? 'led' : ''}`}>
+                    <div className="tp-name"><span className={`role ${roleCls(p.seat)}`}>{roleTxt(p.seat)}</span>{name(p.seat)}</div>
+                    <CardRow cards={p.cards} small />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}

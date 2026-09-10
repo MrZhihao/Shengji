@@ -1,0 +1,23 @@
+{
+  "name": "@shengji/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fastify/static": "^10.1.3",
+    "@shengji/engine": "workspace:*",
+    "@shengji/protocol": "workspace:*",
+    "fastify": "^5.12.3",
+    "ws": "^8.21.3",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
+  }
+}

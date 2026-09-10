@@ -1,0 +1,109 @@
+/** 随机合法机器人：只保证合法，不保证聪明。用于模拟器和补位。 */
+import { RANKS, SUITS, identityKey, type Card, type Suit } from './cards.ts';
+import { decompose } from './combos.ts';
+import { generateFollow } from './follow.ts';
+import { ctxOf, currentTurn } from './reducer.ts';
+import type { Rng } from './rng.ts';
+import type { Action, FriendCallSpec, GameState, Seat } from './state.ts';
+import { groupOf, type Group } from './trump.ts';
+
+export interface BotOptions {
+  /** 有机会亮主时亮的概率 */
+  readonly declareProbability: number;
+  /** 首出时尝试甩牌的概率 */
+  readonly throwProbability: number;
+}
+
+export const defaultBotOptions: BotOptions = { declareProbability: 0.5, throwProbability: 0.1 };
+
+/** 手中所有可以压过当前亮主的亮法。 */
+export function possibleDeclarations(s: GameState, seat: Seat): Card[][] {
+  const hand = s.hands[seat] ?? [];
+  const groups = new Map<string, Card[]>();
+  for (const c of hand) {
+    if (c.suit === 'J' || c.rank === s.level) {
+      const k = identityKey(c);
+      const arr = groups.get(k);
+      if (arr) arr.push(c);
+      else groups.set(k, [c]);
+    }
+  }
+  const current = s.declaration?.count ?? 0;
+  const out: Card[][] = [];
+  for (const cards of groups.values()) {
+    const min = (cards[0] as Card).suit === 'J' ? 2 : 1;
+    for (let n = Math.max(min, current + 1); n <= cards.length; n++) out.push(cards.slice(0, n));
+  }
+  return out;
+}
+
+export function botDeclare(s: GameState, seat: Seat, rng: Rng, opts: BotOptions = defaultBotOptions): Action | null {
+  if (s.phase !== 'dealing' && s.phase !== 'declaring') return null;
+  const options = possibleDeclarations(s, seat);
+  if (options.length === 0 || rng.next() >= opts.declareProbability) return null;
+  return { type: 'declare', seat, cards: rng.pick(options).map((c) => c.id) };
+}
+
+export function botExchangeBottom(s: GameState, seat: Seat, rng: Rng): Action {
+  const hand = s.hands[seat] ?? [];
+  const ctx = ctxOf(s);
+  // 优先扣副牌里的无分单张，再随机补足
+  const preferred = hand.filter((c) => groupOf(c, ctx) !== 'T' && c.rank !== 5 && c.rank !== 10 && c.rank !== 13);
+  const rest = hand.filter((c) => !preferred.includes(c));
+  const picked = [...rng.shuffle(preferred), ...rng.shuffle(rest)].slice(0, s.config.bottomSize);
+  return { type: 'exchangeBottom', seat, cards: picked.map((c) => c.id) };
+}
+
+export function botCallFriend(s: GameState, seat: Seat, rng: Rng): Action {
+  const candidates: FriendCallSpec[] = [];
+  for (const suit of SUITS) {
+    if (suit === s.trumpSuit) continue;
+    for (const rank of RANKS) {
+      if (rank === s.level) continue;
+      for (let nth = 1; nth <= s.config.decks; nth++) candidates.push({ suit, rank, nth });
+    }
+  }
+  const shuffled = rng.shuffle(candidates);
+  return { type: 'callFriend', seat, calls: shuffled.slice(0, s.config.friendCount) };
+}
+
+export function botPlay(s: GameState, seat: Seat, rng: Rng, opts: BotOptions = defaultBotOptions): Action {
+  const hand = s.hands[seat] ?? [];
+  const ctx = ctxOf(s);
+  const trick = s.trick;
+  if (!trick || trick.plays.length === 0 || !trick.lead) {
+    const byGroup = new Map<Group, Card[]>();
+    for (const c of hand) {
+      const g = groupOf(c, ctx);
+      const arr = byGroup.get(g);
+      if (arr) arr.push(c);
+      else byGroup.set(g, [c]);
+    }
+    const groupCards = rng.pick([...byGroup.values()]);
+    const d = decompose(groupCards, ctx);
+    if (!d) throw new Error('同组的牌分解失败');
+    const comps = d.components;
+    if (comps.length >= 2 && rng.next() < opts.throwProbability) {
+      const shuffled = rng.shuffle([...comps]);
+      const n = 2 + rng.int(Math.min(2, shuffled.length - 1));
+      const cards = shuffled.slice(0, n).flatMap((c) => [...c.cards]);
+      return { type: 'play', seat, cards: cards.map((c) => c.id) };
+    }
+    const comp = rng.pick(comps);
+    return { type: 'play', seat, cards: comp.cards.map((c) => c.id) };
+  }
+  const cards = generateFollow(trick.lead, hand, ctx, rng);
+  return { type: 'play', seat, cards: cards.map((c) => c.id) };
+}
+
+/** 轮到该座位时机器人要做的事；不在其回合返回 null。亮主另由 botDeclare 处理。 */
+export function botAction(s: GameState, seat: Seat, rng: Rng, opts: BotOptions = defaultBotOptions): Action | null {
+  switch (s.phase) {
+    case 'bottom': return seat === s.dealer ? botExchangeBottom(s, seat, rng) : null;
+    case 'callFriend': return seat === s.dealer ? botCallFriend(s, seat, rng) : null;
+    case 'playing': return currentTurn(s) === seat ? botPlay(s, seat, rng, opts) : null;
+    default: return null;
+  }
+}
+
+export type { Suit };

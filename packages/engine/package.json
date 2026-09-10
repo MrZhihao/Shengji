@@ -1,0 +1,15 @@
+{
+  "name": "@shengji/engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "升级·找朋友 规则引擎，零运行时依赖",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "sim": "tsx src/sim/cli.ts"
+  }
+}

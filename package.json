@@ -1,0 +1,22 @@
+{
+  "name": "shengji",
+  "private": true,
+  "version": "0.1.0",
+  "description": "升级·找朋友 联机网页版",
+  "scripts": {
+    "build": "pnpm --filter @shengji/web build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "sim": "pnpm --filter @shengji/engine sim",
+    "dev:server": "pnpm --filter @shengji/server dev",
+    "dev:web": "pnpm --filter @shengji/web dev",
+    "start": "pnpm --filter @shengji/server start"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "fast-check": "^4.9.0",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0"
+  }
+}

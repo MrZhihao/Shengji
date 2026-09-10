@@ -1,0 +1,76 @@
+/** 客户端与服务端之间的 WebSocket 消息。全部 JSON 文本帧，t 字段区分类型。 */
+import { z } from 'zod';
+import type { Action, GameEvent, GameState, PlayerView, Seat } from '@shengji/engine';
+
+const cardIds = z.array(z.string().min(1)).min(1).max(40);
+const suit = z.enum(['S', 'H', 'D', 'C']);
+
+export const friendCallSchema = z.object({
+  suit,
+  rank: z.number().int().min(2).max(14),
+  nth: z.number().int().min(1).max(3),
+});
+
+export const clientMessageSchema = z.discriminatedUnion('t', [
+  z.object({ t: z.literal('hello'), name: z.string().trim().min(1).max(12), token: z.string().min(8).max(64).optional() }),
+  z.object({ t: z.literal('createRoom'), players: z.union([z.literal(5), z.literal(6)]) }),
+  z.object({ t: z.literal('joinRoom'), code: z.string().trim().length(4) }),
+  z.object({ t: z.literal('leaveRoom') }),
+  z.object({ t: z.literal('sit'), seat: z.number().int().min(0).max(5) }),
+  z.object({ t: z.literal('stand') }),
+  z.object({ t: z.literal('addBot'), seat: z.number().int().min(0).max(5) }),
+  z.object({ t: z.literal('removeBot'), seat: z.number().int().min(0).max(5) }),
+  z.object({ t: z.literal('start') }),
+  z.object({ t: z.literal('declare'), cards: cardIds }),
+  z.object({ t: z.literal('exchangeBottom'), cards: cardIds }),
+  z.object({ t: z.literal('callFriend'), calls: z.array(friendCallSchema).min(1).max(2) }),
+  z.object({ t: z.literal('play'), cards: cardIds }),
+  z.object({ t: z.literal('nextRound') }),
+  z.object({ t: z.literal('getReplay'), round: z.number().int().min(1) }),
+  z.object({ t: z.literal('ping') }),
+]);
+
+/** 一局的回放：从发牌前的完整状态出发，依次重放操作即可复现。 */
+export interface RoundReplay {
+  readonly round: number;
+  readonly initial: GameState;
+  readonly actions: readonly Action[];
+  readonly names: readonly string[];
+}
+
+export type ClientMessage = z.infer<typeof clientMessageSchema>;
+
+export interface RoomPlayer {
+  readonly seat: Seat;
+  readonly name: string;
+  readonly connected: boolean;
+  readonly isBot: boolean;
+  readonly isHost: boolean;
+}
+
+export interface RoomInfo {
+  readonly code: string;
+  readonly players: 5 | 6;
+  readonly seats: readonly (RoomPlayer | null)[];
+  readonly started: boolean;
+  /** 自己的座位，未坐下为 null */
+  readonly you: Seat | null;
+  readonly youAreHost: boolean;
+}
+
+export type ServerMessage =
+  | { readonly t: 'welcome'; readonly token: string; readonly name: string }
+  | { readonly t: 'room'; readonly room: RoomInfo | null }
+  | { readonly t: 'state'; readonly seq: number; readonly view: PlayerView; readonly events: readonly GameEvent[] }
+  | { readonly t: 'error'; readonly code: string; readonly message: string }
+  | { readonly t: 'replay'; readonly replay: RoundReplay }
+  | { readonly t: 'pong' };
+
+export function parseClientMessage(raw: string): ClientMessage | null {
+  try {
+    const r = clientMessageSchema.safeParse(JSON.parse(raw));
+    return r.success ? r.data : null;
+  } catch {
+    return null;
+  }
+}
