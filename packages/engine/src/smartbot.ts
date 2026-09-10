@@ -100,6 +100,27 @@ export function knownVoids(s: GameState): Map<Seat, Set<Group>> {
     if (first) scan(t.leader, t.plays, decompose(first.cards, ctx));
   }
   if (s.trick) scan(s.trick.leader, s.trick.plays, s.trick.lead);
+  // 推断：庄家叫了某门的朋友，又领出过那门，说明他把那门垫到只剩引牌了；引牌领完就当他断门
+  if (s.dealer !== null) {
+    const leadsBySuit = new Map<Group, number>();
+    const countLead = (leader: Seat, plays: readonly TrickPlay[]) => {
+      if (leader !== s.dealer) return;
+      const first = plays[0];
+      if (!first) return;
+      const g = groupOf(first.cards[0] as Card, ctx);
+      leadsBySuit.set(g, (leadsBySuit.get(g) ?? 0) + 1);
+    };
+    for (const t of s.tricks) countLead(t.leader, t.plays);
+    if (s.trick) countLead(s.trick.leader, s.trick.plays);
+    for (const call of s.friendCalls) {
+      const calls = s.friendCalls.filter((c) => c.suit === call.suit).length;
+      if ((leadsBySuit.get(call.suit) ?? 0) >= calls) {
+        const set = out.get(s.dealer) ?? new Set<Group>();
+        set.add(call.suit);
+        out.set(s.dealer, set);
+      }
+    }
+  }
   return out;
 }
 
@@ -209,6 +230,8 @@ export const smartTuning = {
   voidCallPenalty: 0,
   /** 1：叫朋友按庄家计划；0：用第二版原来的叫法（实验开关） */
   planCalls: 1,
+  /** 庄家开局主动用引牌找朋友所需的最少主牌数；很大的值等于关闭 */
+  openingMinTrumps: 8,
   declareSingle: 11.5,
   declarePair: 9.5,
   earlyPenalty: 1.5,
@@ -759,6 +782,29 @@ export interface PlayCandidate {
   readonly heuristic: number;
 }
 
+/**
+ * 庄家开局先找朋友：前两墩里，只要手里还有为叫朋友留下的引牌（那门只剩不多于叫法数的非朋友牌），
+ * 就把最小的一张领出去，把牌权送给握 A 的朋友；朋友现身后会根据庄家的断门把牌传回来让庄家毙。
+ */
+export function friendOpening(s: GameState, seat: Seat): Card[] | null {
+  if (seat !== s.dealer || s.tricks.length >= 2) return null;
+  if (!s.trick || s.trick.plays.length > 0) return null;
+  const ctx = ctxOf(s);
+  const hand = s.hands[seat] ?? [];
+  // 主牌太弱时送出去的牌权拿不回来，先不急着找
+  if (hand.filter((c) => groupOf(c, ctx) === 'T').length < smartTuning.openingMinTrumps) return null;
+  for (const call of s.friendCalls) {
+    if (call.resolvedSeat !== null) continue;
+    const callsHere = s.friendCalls.filter((c) => c.suit === call.suit).length;
+    const inSuit = hand.filter((c) => c.suit === call.suit && groupOf(c, ctx) !== 'T');
+    const leads = inSuit.filter((c) => c.rank !== call.rank && ordinal(c, ctx) < ordinal({ ...c, rank: call.rank }, ctx));
+    if (leads.length === 0 || leads.length > callsHere) continue;
+    leads.sort((a, b) => ordinal(a, ctx) - ordinal(b, ctx));
+    return [leads[0] as Card];
+  }
+  return null;
+}
+
 /** 当前轮到 seat 出牌时的候选出法，按规则打分降序。首出与跟牌都覆盖。 */
 export function candidatePlays(s: GameState, seat: Seat, rng: Rng, level: SmartLevel = 2): PlayCandidate[] {
   const f = featuresOf(level);
@@ -770,6 +816,14 @@ export function candidatePlays(s: GameState, seat: Seat, rng: Rng, level: SmartL
   if (!trick || trick.plays.length === 0 || !trick.lead) {
     const unseen = unseenCounts(s, seat);
     const cands = leadCandidates(s, seat, sides, unseen, f).map((c) => ({ cards: c.cards, heuristic: c.score }));
+    // 庄家开局找朋友：规则打分排第一（二版直接照做；搜索版把它放进候选，由推演决定）
+    const opening = f.lead ? friendOpening(s, seat) : null;
+    if (opening) {
+      const key = opening.map((c) => c.id).join();
+      const rest = cands.filter((c) => c.cards.map((x) => x.id).join() !== key);
+      rest.sort((a, b) => b.heuristic - a.heuristic);
+      return [{ cards: opening, heuristic: 999 }, ...rest];
+    }
     cands.sort((a, b) => b.heuristic - a.heuristic);
     if (cands.length === 0 && hand[0]) cands.push({ cards: [hand[0]], heuristic: 0 });
     return cands;

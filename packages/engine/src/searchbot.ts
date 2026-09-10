@@ -233,7 +233,9 @@ export function chooseBest(alive: readonly number[], sums: readonly number[], co
 
 /** 出牌搜索的候选动作与规则打分 */
 export function playCandidates(s: GameState, seat: Seat, rng: Rng, maxCandidates: number): { actions: Action[]; heuristics: number[] } {
-  const cands = candidatePlays(s, seat, rng, 2).slice(0, Math.max(1, maxCandidates));
+  const all = candidatePlays(s, seat, rng, 2);
+  // 庄家开局找朋友是真人的固定打法：不交给推演比较，直接照做
+  const cands = (all[0]?.heuristic ?? 0) >= 999 ? all.slice(0, 1) : all.slice(0, Math.max(1, maxCandidates));
   return {
     actions: cands.map((c) => ({ type: 'play', seat, cards: c.cards.map((x) => x.id) })),
     heuristics: cands.map((c) => c.heuristic),
