@@ -181,7 +181,8 @@ function declare(s: GameState, seat: Seat, ids: readonly string[]): ApplyResult 
     declaration: { seat, cards, suit, count },
     trumpSuit: suit,
     trumpDecided: true,
-    dealer: s.dealer ?? seat,
+    // 首局谁最终抢到主谁坐庄：被反主则庄家随之改变；非首局庄家已定，反主只改主花色
+    dealer: s.round === 1 ? seat : s.dealer,
   };
   return ok(next, [{ type: 'declared', seat, cards, suit, count }]);
 }

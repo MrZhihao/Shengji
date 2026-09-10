@@ -62,6 +62,21 @@ describe('整局流程', () => {
     if (!r.ok) expect(r.error.code).toBe('DECLARATION_TOO_WEAK');
   });
 
+  it('首局被反主后，庄家跟着换成反主的人', () => {
+    let s = dealAll(createGame(defaultConfig(6), 'first-override'));
+    const first = s.hands.findIndex((h) => h.some((c) => c.rank === 5 && c.suit !== 'J'));
+    const card = s.hands[first]!.find((c) => c.rank === 5 && c.suit !== 'J')!;
+    s = must(applyAction(s, { type: 'declare', seat: first, cards: [card.id] }));
+    expect(s.dealer).toBe(first);
+    const other = s.hands.findIndex((h, i) => i !== first && h.filter((c) => c.rank === 5 && c.suit !== 'J' && c.suit !== card.suit).length >= 2);
+    if (other >= 0) {
+      const pair = s.hands[other]!.filter((c) => c.rank === 5 && c.suit !== 'J' && c.suit !== card.suit).slice(0, 2);
+      s = must(applyAction(s, { type: 'declare', seat: other, cards: pair.map((c) => c.id) }));
+      expect(s.dealer).toBe(other);
+      expect(s.trumpSuit).toBe(pair[0]!.suit);
+    }
+  });
+
   it('非首局反主只改主花色，庄家不变', () => {
     let s = dealAll({ ...createGame(defaultConfig(6), 'override'), round: 2, dealer: 2 });
     const first = s.hands.findIndex((h, i) => i !== 2 && h.some((c) => c.rank === 5 && c.suit !== 'J'));
