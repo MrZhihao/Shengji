@@ -202,6 +202,10 @@ export function trumpStrength(hand: readonly Card[], level: number, suit: Suit |
 export const smartTuning = {
   /** 1：扣底按庄家计划垫绝朋友门；0：只用普通扣底打分（实验开关） */
   planDiscards: 1,
+  /** 叫缺门（没有引牌）的 A 的扣分；默认 0：缺门就是最短的门，直接叫 */
+  voidCallPenalty: 0,
+  /** 1：叫朋友按庄家计划；0：用第二版原来的叫法（实验开关） */
+  planCalls: 1,
   declareSingle: 11.5,
   declarePair: 9.5,
   earlyPenalty: 1.5,
@@ -281,9 +285,10 @@ function suitPlan(s: GameState, hand: readonly Card[], suit: Suit, callsInSuit: 
   let dumpPoints = 0;
   for (const c of dumps) dumpPoints += cardPoints(c);
   if (dumpPoints > 5 || dumps.some((c) => c.rank >= 13)) return null;
-  let score = 40 - dumps.length * 6 - dumpPoints * 3;
-  score -= held * 14; // 自己有 A 就得先打完自己的才轮到朋友的，朋友现身慢很多，尽量叫自己没有的门
-  if (leads.length < callsInSuit) score -= 10; // 没有引牌，只能靠自己的 A 先出
+  // 尽量挑最短的一门：缺门最好，其次单张；垫得越少越好，自己有 A 的门尽量不叫
+  let score = 40 - cards.length * 5 - dumps.length * 3 - dumpPoints * 3;
+  score -= held * 14; // 自己有 A 就得先打完自己的才轮到朋友的，朋友现身慢很多
+  if (leads.length < callsInSuit) score -= smartTuning.voidCallPenalty;
   return { suit, rank, held, outside, keep: [...friendCards, ...leads], dumps, callsInSuit, score };
 }
 
@@ -317,13 +322,24 @@ export function planDealer(s: GameState, seat: Seat): DealerPlan {
       }
     }
   }
+  const v2calls = (callFriendV2(s, seat) as Extract<Action, { type: 'callFriend' }>).calls as FriendCallSpec[];
   if (options.length === 0) {
     // 垫不干净任何一门：退回第二版的叫法，不刻意垫牌
-    const fallback = (callFriendV2(s, seat) as Extract<Action, { type: 'callFriend' }>).calls as FriendCallSpec[];
-    return { calls: fallback, keep: new Set(), dumps: [] };
+    return { calls: v2calls, keep: new Set(), dumps: [] };
   }
   options.sort((a, b) => b.score - a.score);
-  const best = options[0] as Option;
+  let best = options[0] as Option;
+  // 两个朋友：同一门叫第 n、n+1 张时两张 A 常落在同一人手里，只找到一个朋友。
+  // 能垫出第二门就用两门；不能的话，第二个朋友按第二版叫法挑另一门，不再同门叫两张。
+  if (k === 2 && best.plans.length === 1) {
+    const single = best.plans[0] as SuitPlan;
+    const onePlan = suitPlan(s, hand, single.suit, 1, bottomKnown);
+    const other = v2calls.find((c) => c.suit !== single.suit) ?? null;
+    if (onePlan && other) {
+      const calls: FriendCallSpec[] = [{ suit: onePlan.suit, rank: onePlan.rank, nth: Math.min(s.config.decks, onePlan.held + 1) }, other];
+      return { calls, keep: new Set(onePlan.keep.map((c) => c.id)), dumps: onePlan.dumps };
+    }
+  }
   const calls: FriendCallSpec[] = [];
   const keep = new Set<string>();
   const dumps: Card[] = [];
@@ -332,6 +348,7 @@ export function planDealer(s: GameState, seat: Seat): DealerPlan {
     for (const c of p.keep) keep.add(c.id);
     dumps.push(...p.dumps);
   }
+  void best;
   return { calls, keep, dumps };
 }
 
@@ -387,6 +404,7 @@ export function smartExchangeBottom(s: GameState, seat: Seat, _rng: Rng): Action
 
 export function smartCallFriend(s: GameState, seat: Seat, _rng: Rng, level: SmartLevel = 2): Action {
   if (!featuresOf(level).call) return callFriendV1(s, seat);
+  if (!smartTuning.planCalls) return callFriendV2(s, seat);
   return { type: 'callFriend', seat, calls: planDealer(s, seat).calls };
 }
 

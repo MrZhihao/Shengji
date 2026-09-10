@@ -122,8 +122,10 @@ describe('庄家计划：叫朋友的花色垫到只剩要用的牌', () => {
       expect(callAction.type).toBe('callFriend');
       step(callAction);
       const hand = s.hands[dealer]!;
+      // 只检查计划的那一门（第一个叫法）；第二个朋友可能按普通叫法挑了另一门，不一定垫过
+      const planned = s.friendCalls[0]!.suit;
       const bySuit = new Map<string, number>();
-      for (const c of s.friendCalls) bySuit.set(c.suit, (bySuit.get(c.suit) ?? 0) + 1);
+      for (const c of s.friendCalls) if (c.suit === planned) bySuit.set(c.suit, (bySuit.get(c.suit) ?? 0) + 1);
       for (const [suit, calls] of bySuit) {
         const rank = s.friendCalls.find((c) => c.suit === suit)!.rank;
         const inSuit = hand.filter((c) => c.suit === suit && c.rank !== s.level);
