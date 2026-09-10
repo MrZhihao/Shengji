@@ -33,15 +33,36 @@ function groupName(g: Group): string {
   return g === 'T' ? '主牌' : { S: '黑桃', H: '红桃', D: '方块', C: '梅花' }[g];
 }
 
+/** 只保留纯对子（恰好两张）的身份：三条不必拆开凑对子，所以判断「有没有对子」时不算三条。 */
+function pairOnly(pool: Pool): Pool {
+  const out: Pool = new Map();
+  for (const [k, v] of pool) if (v.cards.length === 2) out.set(k, { key: v.key, ord: v.ord, cards: [...v.cards] });
+  return out;
+}
+
+/** 手里有没有「必须跟出」的 mult 重牌型：对子只算纯对子，三条算三张及以上。 */
+function forcedIdentities(pool: Pool, mult: number): Identity[] {
+  return mult === 2 ? identitiesWithAtLeast(pool, 2).filter((id) => id.cards.length === 2) : identitiesWithAtLeast(pool, mult);
+}
+
+function hasForcedTractor(pool: Pool, mult: number, len: number): boolean {
+  return hasTractor(mult === 2 ? pairOnly(pool) : pool, mult, len);
+}
+
+function forcedTractors(pool: Pool, mult: number, len: number): string[][] {
+  return findTractors(mult === 2 ? pairOnly(pool) : pool, mult, len);
+}
+
 /**
  * 需求消解：按拖拉机（重数高、长度长优先）→ 三条 → 对子 的顺序，
  * 手里有对应牌型就必须出，没有则降级为更小的需求。
+ * 三条不必拆成对子去跟对子或对子拖拉机，但自愿拆开出是合法的。
  * pool 是手中该组的牌，playPool 是所出该组的牌；返回 playPool 是否满足。
  */
 function satisfies(reqs: Reqs, ti: number, triples: number, pairs: number, pool: Pool, playPool: Pool): boolean {
   if (ti < reqs.tractors.length) {
     const t = reqs.tractors[ti] as Shape;
-    if (hasTractor(pool, t.mult, t.length)) {
+    if (hasForcedTractor(pool, t.mult, t.length)) {
       for (const keys of findTractors(playPool, t.mult, t.length)) {
         const p2 = clonePool(pool), pp2 = clonePool(playPool);
         for (const k of keys) { poolTake(p2, k, t.mult); poolTake(pp2, k, t.mult); }
@@ -65,7 +86,7 @@ function satisfies(reqs: Reqs, ti: number, triples: number, pairs: number, pool:
     return satisfies(reqs, ti, 0, pairs + triples, pool, playPool);
   }
   if (pairs > 0) {
-    if (identitiesWithAtLeast(pool, 2).length > 0) {
+    if (forcedIdentities(pool, 2).length > 0) {
       for (const id of identitiesWithAtLeast(playPool, 2)) {
         const p2 = clonePool(pool), pp2 = clonePool(playPool);
         poolTake(p2, id.key, 2); poolTake(pp2, id.key, 2);
@@ -164,8 +185,8 @@ export function generateFollowWith(lead: Decomposition, hand: readonly Card[], c
   const reqs = reqsOf(lead);
   let triples = reqs.triples, pairs = reqs.pairs;
   for (const t of reqs.tractors) {
-    if (hasTractor(pool, t.mult, t.length)) {
-      const keys = chooser.pickTractor(findTractors(pool, t.mult, t.length), pool);
+    if (hasForcedTractor(pool, t.mult, t.length)) {
+      const keys = chooser.pickTractor(forcedTractors(pool, t.mult, t.length), pool);
       for (const k of keys) chosen.push(...poolTake(pool, k, t.mult));
     } else if (t.mult === 3) triples += t.length;
     else pairs += t.length;
@@ -177,7 +198,7 @@ export function generateFollowWith(lead: Decomposition, hand: readonly Card[], c
     triples--;
   }
   while (pairs > 0) {
-    const ids = identitiesWithAtLeast(pool, 2);
+    const ids = forcedIdentities(pool, 2);
     if (ids.length === 0) break;
     chosen.push(...poolTake(pool, chooser.pickIdentity(ids).key, 2));
     pairs--;

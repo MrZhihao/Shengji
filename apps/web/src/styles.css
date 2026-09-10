@@ -102,10 +102,12 @@ b { font-weight: 700; }
 .me-head .b-name { font-weight: 700; }
 .me-head .b-count { color: var(--muted); }
 .play-hint { color: var(--gold); font-size: 12px; margin-left: auto; }
-.hand { display: flex; overflow-x: auto; padding: 16px 10px 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
-.hand::-webkit-scrollbar { display: none; }
-.hand .card { margin-right: -26px; flex: 0 0 auto; transition: transform .14s ease, box-shadow .14s ease, opacity .2s; }
-.hand .card:last-child { margin-right: 0; }
+.hand { display: flex; flex-direction: column; gap: 10px; padding: 18px 8px 4px; --w: 60px; }
+.hand-row { display: flex; justify-content: flex-start; }
+.hand-row .card { flex: 0 0 auto; transition: transform .14s ease, box-shadow .14s ease, opacity .2s;
+  /* 让 n 张牌刚好铺满一排：负外边距按容器宽度算，牌少时留 4px 间隙 */
+  margin-right: min(4px, calc(-1 * (var(--w) - (100% - var(--w)) / max(var(--n) - 1, 1)))); }
+.hand-row .card:last-child { margin-right: 0; }
 .hand .card.selected { transform: translateY(-16px); z-index: 1; }
 .hand .card.dim { opacity: .45; }
 .hand .card.dealt { animation: deal-in .35s cubic-bezier(.2,.8,.2,1) both; }
@@ -113,21 +115,21 @@ b { font-weight: 700; }
 .actions .primary { min-width: 128px; }
 
 /* 牌面 */
-.card { position: relative; width: 56px; height: 80px; border-radius: 8px; background: var(--card-bg); color: var(--card-ink);
+.card { position: relative; width: var(--w, 60px); height: calc(var(--w, 60px) * 1.43); border-radius: 8px; background: var(--card-bg); color: var(--card-ink);
   border: 1px solid var(--card-edge); box-shadow: 0 1px 3px rgba(0,0,0,.35); padding: 0; font-weight: 700; line-height: 1; overflow: hidden; }
 .card:disabled { opacity: 1; }
 .card.red { color: var(--card-red); }
 .card .corner { position: absolute; display: flex; flex-direction: column; align-items: center; line-height: 1; }
 .card .corner.tl { top: 4px; left: 5px; }
 .card .corner.br { bottom: 4px; right: 5px; transform: rotate(180deg); }
-.card .corner .rank { font-size: 15px; letter-spacing: -.02em; }
-.card .corner .suit { font-size: 11px; margin-top: 1px; }
-.card .pip { position: absolute; left: 50%; top: 52%; transform: translate(-50%, -50%); font-size: 26px; opacity: .9; }
+.card .corner .rank { font-size: 17px; letter-spacing: -.02em; }
+.card .corner .suit { font-size: 13px; margin-top: 1px; }
+.card .pip { position: absolute; left: 50%; top: 52%; transform: translate(-50%, -50%); font-size: 30px; opacity: .9; }
 .card.joker .corner .rank { font-size: 10px; writing-mode: vertical-rl; letter-spacing: .12em; }
 .card.joker .pip { font-size: 22px; color: var(--gold); }
 .card.joker.red .pip { color: var(--card-red); }
 .card.selected { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold), 0 6px 14px rgba(0,0,0,.45); }
-.card.small { width: 36px; height: 50px; border-radius: 5px; }
+.card.small { --w: 36px; width: 36px; height: 50px; border-radius: 5px; }
 .card.small .corner.tl { top: 3px; left: 4px; }
 .card.small .corner .rank { font-size: 12px; }
 .card.small .corner .suit { font-size: 10px; }
@@ -178,11 +180,11 @@ b { font-weight: 700; }
 
 /* 宽屏 */
 @media (min-width: 900px) {
-  .card { width: 64px; height: 92px; }
-  .card .corner .rank { font-size: 17px; }
-  .card .pip { font-size: 30px; }
-  .hand .card { margin-right: -20px; }
-  .hand { justify-content: center; }
+  .hand { --w: 72px; }
+  .card .corner .rank { font-size: 19px; }
+  .card .pip { font-size: 34px; }
+  .hand-row { justify-content: center; }
+  .hand-row .card { margin-right: min(6px, calc(-1 * (var(--w) - (100% - var(--w)) / max(var(--n) - 1, 1)))); }
   .badge .b-name { font-size: 14px; max-width: 140px; }
   .status { font-size: 17px; }
 }

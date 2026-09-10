@@ -69,10 +69,20 @@ describe('跟牌校验', () => {
     expect(code('♠A ♠A ♠A', hand, '♠K ♠K ♠Q')).toBeNull();
   });
 
-  it('三条可以拆成对子跟对子拖拉机', () => {
+  it('三条不必拆开跟对子或对子拖拉机，自愿拆开也合法', () => {
     const hand = cs('♠A ♠A ♠A ♠K ♠K ♠K');
-    expect(code('♠Q ♠Q ♠J ♠J', hand, '♠A ♠A ♠A ♠K')).toBe('MUST_MATCH_STRUCTURE');
+    expect(code('♠Q ♠Q ♠J ♠J', hand, '♠A ♠A ♠A ♠K')).toBeNull();
     expect(code('♠Q ♠Q ♠J ♠J', hand, '♠A ♠A ♠K ♠K')).toBeNull();
+    const hand2 = cs('♠A ♠A ♠A ♠9 ♠3');
+    expect(code('♠K ♠K', hand2, '♠9 ♠3')).toBeNull();
+    expect(code('♠K ♠K', hand2, '♠A ♠A')).toBeNull();
+  });
+
+  it('有纯对子时仍然必须跟对子', () => {
+    const hand = cs('♠A ♠A ♠A ♠9 ♠9 ♠3');
+    expect(code('♠K ♠K', hand, '♠A ♠3')).toBe('MUST_MATCH_STRUCTURE');
+    expect(code('♠K ♠K', hand, '♠9 ♠9')).toBeNull();
+    expect(code('♠K ♠K', hand, '♠A ♠A')).toBeNull();
   });
 
   it('张数必须一致', () => {

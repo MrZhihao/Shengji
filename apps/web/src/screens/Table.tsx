@@ -52,6 +52,21 @@ function statusText(view: PlayerView, name: (s: Seat) => string): string {
   }
 }
 
+/** 手牌分成两排：尽量在花色边界处切开，让同一花色不跨排。牌少于 8 张时只用一排。 */
+function splitHand(hand: readonly Card[], ctx: { level: number; trumpSuit: PlayerView['trumpSuit'] }): Card[][] {
+  if (hand.length < 8) return [[...hand]];
+  const mid = hand.length / 2;
+  let best = Math.ceil(mid);
+  let bestDist = Infinity;
+  for (let i = 1; i < hand.length; i++) {
+    const a = hand[i - 1] as Card, b = hand[i] as Card;
+    if (groupOf(a, ctx) === groupOf(b, ctx)) continue;
+    const dist = Math.abs(i - mid);
+    if (dist < bestDist && dist <= hand.length * 0.2) { bestDist = dist; best = i; }
+  }
+  return [hand.slice(0, best), hand.slice(best)];
+}
+
 export function Table({ client }: { client: GameClient }) {
   const view = client.view!;
   const room = client.room!;
@@ -133,6 +148,7 @@ export function Table({ client }: { client: GameClient }) {
   const toggle = (id: string) => { sound.unlock(); setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id])); };
   const send = (m: ClientMessage) => client.send(m);
   const ctx = { level: view.level, trumpSuit: view.trumpSuit };
+  const handRows = useMemo(() => splitHand(view.hand, ctx), [view.hand, view.level, view.trumpSuit]);
 
   // 跟牌辅助：即时校验 + 灰显不该出的牌
   const lead = view.trick?.lead ?? null;
@@ -250,16 +266,19 @@ export function Table({ client }: { client: GameClient }) {
           {selected.length > 0 && <button className="ghost tiny" onClick={() => setSelected([])}>清除</button>}
         </div>
         <div className="hand">
-          {view.hand.map((c, i) => (
-            <CardView
-              key={c.id}
-              card={c}
-              selected={selected.includes(c.id)}
-              dim={dimCard(c)}
-              className={newIds.has(c.id) ? 'dealt' : ''}
-              style={{ ['--i' as string]: i } as React.CSSProperties}
-              onClick={() => toggle(c.id)}
-            />
+          {handRows.map((row, r) => (
+            <div key={r} className="hand-row" style={{ ['--n' as string]: row.length } as React.CSSProperties}>
+              {row.map((c) => (
+                <CardView
+                  key={c.id}
+                  card={c}
+                  selected={selected.includes(c.id)}
+                  dim={dimCard(c)}
+                  className={newIds.has(c.id) ? 'dealt' : ''}
+                  onClick={() => toggle(c.id)}
+                />
+              ))}
+            </div>
           ))}
         </div>
         <div className="actions">

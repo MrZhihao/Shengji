@@ -527,6 +527,11 @@ export function smartPlay(s: GameState, seat: Seat, rng: Rng, level: SmartLevel 
     generateFollowWith(lead, hand, ctx, pointsChooser(ctx)),
     ...ruffCandidates(s, seat),
   ];
+  // 首出是对子时，自愿拆三条出对子也是一种选择
+  if (lead.components.length === 1 && lead.components[0]?.kind === 'pair') {
+    const mine = poolOf(hand.filter((c) => groupOf(c, ctx) === lead.group), ctx);
+    for (const id of mine.values()) if (id.cards.length >= 3) raw.push(id.cards.slice(0, 2));
+  }
   for (let i = 0; i < 20; i++) raw.push(generateFollow(lead, hand, ctx, rng));
   const cands = dedupe(raw).filter((c) => validateFollow(lead, hand, c, ctx) === null);
   const unseen = f.follow ? unseenCounts(s, seat) : null;
