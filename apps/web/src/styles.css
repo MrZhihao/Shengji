@@ -120,7 +120,9 @@ b { font-weight: 700; }
   margin-right: min(4px, calc(-1 * (var(--w) - (100% - var(--w)) / max(var(--n) - 1, 1)))); }
 .hand-row .card:last-child { margin-right: 0; }
 .hand .card.selected { transform: translateY(-16px); z-index: 1; }
-.hand .card.dim { opacity: .45; }
+/* 不能出的牌：不用透明度（重叠的牌会互相透出来），而是压一层不透明的暗色蒙版并降低饱和度 */
+.hand .card.dim { filter: saturate(.25); }
+.hand .card.dim::after { content: ''; position: absolute; inset: 0; background: rgba(30, 48, 40, .58); border-radius: inherit; pointer-events: none; }
 /* 不用 both 填充：动画结束后要交还给 .selected 的 transform，否则刚发到的牌选中后抬不起来 */
 .hand .card.dealt { animation: deal-in .35s cubic-bezier(.2,.8,.2,1); }
 .actions { display: flex; gap: 10px; justify-content: flex-end; align-items: center; }
