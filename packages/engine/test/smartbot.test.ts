@@ -103,3 +103,40 @@ describe('残局精确求解', () => {
     for (const set of calls) expect(applyAction(s, { type: 'callFriend', seat: dealer, calls: set }).ok).toBe(true);
   }, 60_000);
 });
+
+describe('庄家计划：叫朋友的花色垫到只剩要用的牌', () => {
+  it('扣底后朋友花色只剩自己的朋友牌加每个叫法一张引牌', async () => {
+    const { planDealer } = await import('../src/smartbot.ts');
+    let checked = 0;
+    for (let g = 0; g < 12; g++) {
+      const rng = createRng(`plan-${g}`);
+      let s = createGame(defaultConfig(g % 2 === 0 ? 6 : 5), `plan-${g}`);
+      const step = (a: Parameters<typeof applyAction>[1]) => { const r = applyAction(s, a); if (!r.ok) throw new Error(r.error.message); s = r.state; };
+      while (s.phase === 'dealing') { for (let i = 0; i < s.config.players; i++) { const d = smartDeclare(s, i, rng); if (d) step(d); } step({ type: 'dealCard' }); }
+      step({ type: 'closeDeclaring' });
+      const dealer = s.dealer!;
+      const plan = planDealer(s, dealer);
+      if (plan.dumps.length === 0 && plan.keep.size === 0) continue; // 垫不干净任何一门的退路
+      step(smartAction(s, dealer, rng)!); // 扣底
+      const callAction = smartAction(s, dealer, rng)!;
+      expect(callAction.type).toBe('callFriend');
+      step(callAction);
+      const hand = s.hands[dealer]!;
+      const bySuit = new Map<string, number>();
+      for (const c of s.friendCalls) bySuit.set(c.suit, (bySuit.get(c.suit) ?? 0) + 1);
+      for (const [suit, calls] of bySuit) {
+        const rank = s.friendCalls.find((c) => c.suit === suit)!.rank;
+        const inSuit = hand.filter((c) => c.suit === suit && c.rank !== s.level);
+        const held = inSuit.filter((c) => c.rank === rank).length;
+        const leads = inSuit.length - held;
+        // 引牌不超过叫法数（引牌不够时可能更少）
+        expect(leads).toBeLessThanOrEqual(calls);
+        // 序号 = 自己持有数 + 第几个叫法
+        const nths = s.friendCalls.filter((c) => c.suit === suit).map((c) => c.nth).sort();
+        expect(nths[0]).toBe(Math.min(s.config.decks, held + 1));
+      }
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(0);
+  }, 60_000);
+});

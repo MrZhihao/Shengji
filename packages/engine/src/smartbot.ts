@@ -200,6 +200,8 @@ export function trumpStrength(hand: readonly Card[], level: number, suit: Suit |
 
 /** 亮主阈值，可在模拟器里调参 */
 export const smartTuning = {
+  /** 1：扣底按庄家计划垫绝朋友门；0：只用普通扣底打分（实验开关） */
+  planDiscards: 1,
   declareSingle: 11.5,
   declarePair: 9.5,
   earlyPenalty: 1.5,
@@ -237,12 +239,113 @@ function declareV2(s: GameState, seat: Seat, options: Card[][]): Action | null {
 
 // ---------- 扣底 ----------
 
+// ---------- 庄家计划：叫哪门朋友，就把那门垫到只剩要用的牌 ----------
+
+export interface DealerPlan {
+  readonly calls: FriendCallSpec[];
+  /** 计划里必须留在手上的牌 */
+  readonly keep: Set<string>;
+  /** 扣底时优先垫掉的牌（朋友花色里多余的牌） */
+  readonly dumps: Card[];
+}
+
+interface SuitPlan {
+  suit: Suit;
+  rank: number;
+  held: number;
+  outside: number;
+  /** 保留：自己的朋友牌 + 每个叫法一张引牌 */
+  keep: Card[];
+  dumps: Card[];
+  callsInSuit: number;
+  score: number;
+}
+
+/**
+ * 给某个副牌花色做计划：叫第 held+1 张（自己有几张就叫下一张），
+ * 留下自己的那几张加上 callsInSuit 张最小的引牌，其余全垫掉。
+ */
+function suitPlan(s: GameState, hand: readonly Card[], suit: Suit, callsInSuit: number, bottomKnown: readonly Card[]): SuitPlan | null {
+  const ctx = ctxOf(s);
+  const rank = s.level === 14 ? 13 : 14;
+  const cards = hand.filter((c) => c.suit === suit && groupOf(c, ctx) !== 'T');
+  const friendCards = cards.filter((c) => c.rank === rank);
+  const others = cards.filter((c) => c.rank !== rank).sort((a, b) => ordinal(a, ctx) - ordinal(b, ctx));
+  const held = friendCards.length;
+  const buried = bottomKnown.filter((c) => c.suit === suit && c.rank === rank).length;
+  const outside = s.config.decks - held - buried;
+  if (outside < callsInSuit) return null;
+  const leads = others.slice(0, callsInSuit);
+  const dumps = others.slice(callsInSuit);
+  // 为了垫绝门而把分牌或 K 埋进底牌得不偿失：这样的门不作为计划，退回普通扣底
+  let dumpPoints = 0;
+  for (const c of dumps) dumpPoints += cardPoints(c);
+  if (dumpPoints > 5 || dumps.some((c) => c.rank >= 13)) return null;
+  let score = 40 - dumps.length * 6 - dumpPoints * 3;
+  score -= held * 14; // 自己有 A 就得先打完自己的才轮到朋友的，朋友现身慢很多，尽量叫自己没有的门
+  if (leads.length < callsInSuit) score -= 10; // 没有引牌，只能靠自己的 A 先出
+  return { suit, rank, held, outside, keep: [...friendCards, ...leads], dumps, callsInSuit, score };
+}
+
+/**
+ * 庄家计划：选一门副牌叫朋友，把这门垫到只剩要用的牌。
+ * 两个朋友时优先同一门叫「第 n、n+1 张」，垫牌不够再考虑第二门。
+ */
+export function planDealer(s: GameState, seat: Seat): DealerPlan {
+  const hand = s.hands[seat] ?? [];
+  const bottomKnown = s.phase === 'bottom' ? [] : s.bottom;
+  // 扣底阶段可以垫 bottomSize 张；叫朋友阶段牌已定，只能选已经垫干净的门
+  const budget = s.phase === 'bottom' ? s.config.bottomSize : 0;
+  const k = s.config.friendCount;
+  const suits = SUITS.filter((x) => x !== s.trumpSuit);
+  interface Option { plans: SuitPlan[]; score: number; dumps: number }
+  const options: Option[] = [];
+  for (const x of suits) {
+    const one = suitPlan(s, hand, x, k, bottomKnown); // 全部叫在这一门
+    if (one && one.dumps.length <= budget) options.push({ plans: [one], score: one.score, dumps: one.dumps.length });
+    if (k === 2) {
+      const first = suitPlan(s, hand, x, 1, bottomKnown);
+      if (!first) continue;
+      for (const y of suits) {
+        if (y === x) continue;
+        const second = suitPlan(s, hand, y, 1, bottomKnown);
+        if (!second) continue;
+        const dumps = first.dumps.length + second.dumps.length;
+        if (dumps > budget) continue;
+        // 两个朋友尽量在不同门：同一门叫第 n、n+1 张时，两张 A 常在同一人手里，结果只找到一个朋友
+        options.push({ plans: [first, second], score: first.score + second.score + 14, dumps });
+      }
+    }
+  }
+  if (options.length === 0) {
+    // 垫不干净任何一门：退回第二版的叫法，不刻意垫牌
+    const fallback = (callFriendV2(s, seat) as Extract<Action, { type: 'callFriend' }>).calls as FriendCallSpec[];
+    return { calls: fallback, keep: new Set(), dumps: [] };
+  }
+  options.sort((a, b) => b.score - a.score);
+  const best = options[0] as Option;
+  const calls: FriendCallSpec[] = [];
+  const keep = new Set<string>();
+  const dumps: Card[] = [];
+  for (const p of best.plans) {
+    for (let i = 0; i < p.callsInSuit; i++) calls.push({ suit: p.suit, rank: p.rank, nth: Math.min(s.config.decks, p.held + 1 + i) });
+    for (const c of p.keep) keep.add(c.id);
+    dumps.push(...p.dumps);
+  }
+  return { calls, keep, dumps };
+}
+
 /** 扣底候选集合：第二版的首选，加上把末位几张分别换成下一张的变体 */
 export function rankedBottomSets(s: GameState, seat: Seat, maxSets = 6): Card[][] {
-  const ranked = rankBottomDiscards(s, seat);
+  const plan = smartTuning.planDiscards ? planDealer(s, seat) : { calls: [], keep: new Set<string>(), dumps: [] as Card[] };
+  const ranked = rankBottomDiscards(s, seat).filter((c) => !plan.keep.has(c.id) && !plan.dumps.some((d) => d.id === c.id));
   const n = s.config.bottomSize;
-  const base = ranked.slice(0, n);
+  const base = [...plan.dumps.slice(0, n), ...ranked].slice(0, n);
   const sets: Card[][] = [base];
+  // 普通扣底（不为找朋友垫门）也作为候选，加强版由推演决定用哪个
+  const plain = rankBottomDiscards(s, seat).slice(0, n);
+  if (plain.map((c) => c.id).sort().join() !== base.map((c) => c.id).sort().join()) sets.push(plain);
+  if (plan.dumps.length >= n || maxSets <= sets.length) return sets.slice(0, Math.max(1, maxSets));
   for (let swapOut = n - 1; swapOut >= Math.max(0, n - 3) && sets.length < maxSets; swapOut--) {
     for (let swapIn = n; swapIn < Math.min(ranked.length, n + 3) && sets.length < maxSets; swapIn++) {
       const v = [...base];
@@ -276,31 +379,15 @@ function rankBottomDiscards(s: GameState, seat: Seat): Card[] {
 }
 
 export function smartExchangeBottom(s: GameState, seat: Seat, _rng: Rng): Action {
-  const hand = s.hands[seat] ?? [];
-  const ctx = ctxOf(s);
-  const bySuit = new Map<Group, Card[]>();
-  for (const c of hand) bySuit.set(groupOf(c, ctx), [...(bySuit.get(groupOf(c, ctx)) ?? []), c]);
-  const pool = poolOf(hand, ctx);
-  const scored = hand.map((c) => {
-    const g = groupOf(c, ctx);
-    const suitLen = bySuit.get(g)?.length ?? 0;
-    const copies = pool.get(identityKey(c))?.cards.length ?? 1;
-    let score = 30 - ordinal(c, ctx);
-    if (g === 'T') score -= 40;
-    if (cardPoints(c) > 0) score -= 25;
-    if (g !== 'T') score += Math.max(0, 8 - suitLen) * 3;
-    if (copies >= 2) score -= 12;
-    if (c.rank === 14 && g !== 'T') score -= 15;
-    return { c, score };
-  });
-  scored.sort((a, b) => b.score - a.score);
-  return { type: 'exchangeBottom', seat, cards: scored.slice(0, s.config.bottomSize).map((x) => x.c.id) };
+  const best = rankedBottomSets(s, seat, 1)[0] as Card[];
+  return { type: 'exchangeBottom', seat, cards: best.map((c) => c.id) };
 }
 
 // ---------- 叫朋友 ----------
 
 export function smartCallFriend(s: GameState, seat: Seat, _rng: Rng, level: SmartLevel = 2): Action {
-  return featuresOf(level).call ? callFriendV2(s, seat) : callFriendV1(s, seat);
+  if (!featuresOf(level).call) return callFriendV1(s, seat);
+  return { type: 'callFriend', seat, calls: planDealer(s, seat).calls };
 }
 
 function callFriendV1(s: GameState, seat: Seat): Action {
@@ -377,8 +464,11 @@ export function rankedFriendCallSets(s: GameState, seat: Seat, maxSets = 6): Fri
   rec(0, []);
   // 不同花色优先排前面
   sets.sort((a, b) => new Set(b.map((x) => x.suit)).size - new Set(a.map((x) => x.suit)).size);
-  if (sets.length === 0) sets.push((callFriendV2(s, seat) as Extract<Action, { type: 'callFriend' }>).calls as FriendCallSpec[]);
-  return sets.slice(0, maxSets);
+  // 庄家计划（垫绝门那一叫）永远放第一
+  const planned = planDealer(s, seat).calls;
+  const keyOf = (set: FriendCallSpec[]) => set.map(key).sort().join('|');
+  const rest = sets.filter((x) => keyOf(x) !== keyOf(planned));
+  return [planned, ...rest].slice(0, maxSets);
 }
 
 function callFriendV2(s: GameState, seat: Seat): Action {
@@ -470,11 +560,15 @@ function leadCandidates(s: GameState, seat: Seat, sides: Sides, unseen: Map<stri
         // 庄家先找朋友：用朋友牌花色里比朋友牌小的牌引牌，让握着朋友牌的人尽早现身并赢墩。
         // 越早越值得，前几墩加得多；单张最好，小对子也行
         const call = unresolvedCalls.find((c) => c.suit === g);
-        if (call && comp.kind === 'single' && pts === 0 && trumpCount >= 7
+        if (call && comp.kind === 'single'
           && comp.cards.every((c) => c.rank !== call.rank && ordinal(c, ctx) < ordinal({ ...c, rank: call.rank }, ctx))) {
-          // 只在开局前几墩、主牌够硬、用无分小单张时去找：送掉一墩换来知道队友是谁
+          const callsHere = unresolvedCalls.filter((c) => c.suit === g).length;
+          const leadsLeft = cards.filter((c) => c.rank !== call.rank).length;
           const early = Math.max(0, 4 - s.tricks.length);
-          score += 18 + early * 3;
+          // 这门已经垫到只剩引牌：这张就是留着找朋友的，尽早打出去
+          if (leadsLeft <= callsHere) score += 40 + early * 3;
+          // 否则只在开局前几墩、主牌够硬、用无分小单张时去找
+          else if (pts === 0 && trumpCount >= 7) score += 18 + early * 3;
         }
       }
       // 最后几墩：能赢就赢，末墩关系到抠底
