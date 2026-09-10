@@ -34,7 +34,9 @@ function declarable(view: PlayerView, selected: readonly Card[]): boolean {
   if (view.phase !== 'dealing' && view.phase !== 'declaring') return false;
   if (selected.length < 1 || selected.length > 3) return false;
   const first = selected[0] as Card;
-  if (!selected.every((c) => identityKey(c) === identityKey(first))) return false;
+  const allJokers = selected.every((c) => c.suit === 'J');
+  const mixedTriple = allJokers && selected.length === 3; // 三张王可以混
+  if (!mixedTriple && !selected.every((c) => identityKey(c) === identityKey(first))) return false;
   if (first.suit === 'J' ? selected.length < 2 : first.rank !== view.level) return false;
   return selected.length > (view.declaration?.count ?? 0);
 }

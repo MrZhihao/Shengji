@@ -106,6 +106,20 @@ describe('整局流程', () => {
     expect(s.trumpDecided).toBe(true);
   });
 
+  it('三张王不论大小混不混都能亮，两张王必须相同', () => {
+    let s = dealAll(createGame(defaultConfig(6), 'mixed-jokers'));
+    const seat = s.hands.findIndex((h) => h.filter((c) => c.suit === 'J').length >= 3 && h.some((c) => c.rank === 16) && h.some((c) => c.rank === 15));
+    if (seat < 0) return;
+    const big = s.hands[seat]!.filter((c) => c.rank === 16);
+    const small = s.hands[seat]!.filter((c) => c.rank === 15);
+    const mixedPair = applyAction(s, { type: 'declare', seat, cards: [big[0]!.id, small[0]!.id] });
+    expect(mixedPair.ok).toBe(false);
+    const three = [...big, ...small].slice(0, 3);
+    s = must(applyAction(s, { type: 'declare', seat, cards: three.map((c) => c.id) }));
+    expect(s.declaration?.count).toBe(3);
+    expect(s.trumpSuit).toBeNull();
+  });
+
   it('叫朋友的约束', () => {
     let s = dealAll(createGame(defaultConfig(6), 'friend'));
     const seat = s.hands.findIndex((h) => h.some((c) => c.rank === 5 && c.suit !== 'J'));

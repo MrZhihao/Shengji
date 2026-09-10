@@ -467,8 +467,13 @@ function leadCandidates(s: GameState, seat: Seat, sides: Sides, unseen: Map<stri
         score = (sides.likelyDealerSide && trumpCount >= 8 ? 60 : 15) - comp.top - pts * 4 - (comp.cards.length - 1) * 8;
       } else {
         score = 40 - comp.top - pts * 5 + Math.max(0, 8 - cards.length) * 2 - (comp.cards.length - 1) * 6;
-        // 庄家用朋友牌花色的小单张引牌，让握着 A 的朋友尽早现身并赢墩
-        if (comp.kind === 'single' && unresolvedCalls.some((c) => c.suit === g && c.rank > comp.top + 2) && cards.length <= 3) score += 28;
+        // 庄家先找朋友：用朋友牌花色里比朋友牌小的牌引牌，让握着朋友牌的人尽早现身并赢墩。
+        // 越早越值得，前几墩加得多；单张最好，小对子也行
+        const call = unresolvedCalls.find((c) => c.suit === g);
+        if (call && (comp.kind === 'single' || comp.kind === 'pair') && comp.cards.every((c) => c.rank !== call.rank && ordinal(c, ctx) < ordinal({ ...c, rank: call.rank }, ctx))) {
+          const early = Math.max(0, 8 - s.tricks.length);
+          score += 30 + early * 4 - (comp.kind === 'pair' ? 8 : 0);
+        }
       }
       // 最后几墩：能赢就赢，末墩关系到抠底
       if (lastTrick && isSafe) score += 30;

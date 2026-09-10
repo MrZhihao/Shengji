@@ -153,10 +153,13 @@ function declare(s: GameState, seat: Seat, ids: readonly string[]): ApplyResult 
   const cards = findCards(hand, ids);
   if (!cards || cards.length === 0) return fail('CARDS_NOT_IN_HAND', '亮出的牌不在手中');
   const first = cards[0] as Card;
-  if (!cards.every((c) => identityKey(c) === identityKey(first))) {
-    return fail('INVALID_DECLARATION', '亮主的牌必须是同一张牌的多张');
-  }
   if (cards.length > 3) return fail('INVALID_DECLARATION', '最多亮三张');
+  const allJokers = cards.every((c) => c.suit === 'J');
+  // 三张王不论大小王混不混都可以亮；其余情况必须是同一张牌的多张
+  const mixedTripleJokers = allJokers && cards.length === 3;
+  if (!mixedTripleJokers && !cards.every((c) => identityKey(c) === identityKey(first))) {
+    return fail('INVALID_DECLARATION', '亮主的牌必须是同一张牌的多张，三张王可以混');
+  }
   let suit: Suit | null;
   if (first.suit === 'J') {
     if (cards.length < 2) return fail('INVALID_DECLARATION', '单张王不能亮主');

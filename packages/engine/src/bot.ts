@@ -34,6 +34,11 @@ export function possibleDeclarations(s: GameState, seat: Seat): Card[][] {
     const min = (cards[0] as Card).suit === 'J' ? 2 : 1;
     for (let n = Math.max(min, current + 1); n <= cards.length; n++) out.push(cards.slice(0, n));
   }
+  // 三张王可以大小混着亮
+  const jokers = hand.filter((c) => c.suit === 'J');
+  if (jokers.length >= 3 && current < 3 && !out.some((o) => o.length === 3 && (o[0] as Card).suit === 'J')) {
+    out.push(jokers.slice(0, 3));
+  }
   return out;
 }
 
