@@ -114,13 +114,15 @@ wss.on('connection', (ws: AliveSocket) => {
       case 'joinRoom': {
         const r = registry.rooms.get(msg.code.toUpperCase());
         if (!r) return send(ws, { t: 'error', code: 'NO_ROOM', message: '房间不存在' });
-        if (r.started && r.seatOf(token) === null) {
-          return send(ws, { t: 'error', code: 'STARTED', message: '这个房间已经开局了' });
+        const needsSeat = r.started && r.seatOf(token) === null;
+        if (needsSeat && !r.seats.some((s) => s?.isBot)) {
+          return send(ws, { t: 'error', code: 'STARTED', message: '这个房间已经开局，也没有机器人座位可以接管' });
         }
         const prev = room();
         if (prev && prev !== r) prev.leave(token);
         session.roomCode = r.code;
         r.join(token, session.name, ws);
+        if (needsSeat) r.takeoverBot(token);
         r.sync(token);
         r.broadcastRoom();
         return;

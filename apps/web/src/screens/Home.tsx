@@ -31,6 +31,7 @@ export function Home({ client }: { client: GameClient }) {
       </div>
       <div className="panel">
         <div className="panel-title">加入</div>
+        <div className="hint">房间已开局也能进，会接管机器人的座位</div>
         <div className="row">
           <input className="code" value={code} maxLength={4} placeholder="房间码" onChange={(e) => setCode(e.target.value.toUpperCase())} />
           <button className="primary" disabled={!ready || code.length !== 4} onClick={() => { ensureName(); setTimeout(() => client.send({ t: 'joinRoom', code }), 50); }}>

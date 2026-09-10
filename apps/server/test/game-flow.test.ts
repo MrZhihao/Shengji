@@ -195,6 +195,45 @@ it('房主可以重发本局和结束游戏回大厅', async () => {
   c.ws.close();
 }, 30_000);
 
+it('中途退出由机器人接管，再进来能接回座位，房主顺延', async () => {
+  const host = new Client(server.port);
+  await host.open();
+  host.send({ t: 'hello', name: '甲' });
+  await host.next(); await host.next();
+  host.send({ t: 'createRoom', players: 5 });
+  const created = await host.until(isRoom);
+  const code = created.room!.code;
+  const guest = new Client(server.port);
+  await guest.open();
+  guest.send({ t: 'hello', name: '乙' });
+  await guest.next(); await guest.next();
+  guest.send({ t: 'joinRoom', code });
+  await guest.until(isRoom);
+  guest.send({ t: 'sit', seat: 1 });
+  await guest.until((m): m is Extract<ServerMessage, { t: 'room' }> => isRoom(m) && m.room?.you === 1);
+  for (let seat = 2; seat < 5; seat++) host.send({ t: 'addBot', seat });
+  await host.until((m): m is Extract<ServerMessage, { t: 'room' }> => isRoom(m) && m.room?.seats.every(Boolean) === true);
+  host.send({ t: 'start' });
+  await host.until(isState);
+  await guest.until(isState);
+  // 房主退出：0 号位变机器人，房主交给乙
+  host.send({ t: 'leaveRoom' });
+  const afterLeave = await guest.until((m): m is Extract<ServerMessage, { t: 'room' }> => isRoom(m) && m.room?.seats[0]?.isBot === true);
+  expect(afterLeave.room?.youAreHost).toBe(true);
+  // 丙用房间码进来，接管一个机器人座位
+  const third = new Client(server.port);
+  await third.open();
+  third.send({ t: 'hello', name: '丙' });
+  await third.next(); await third.next();
+  third.send({ t: 'joinRoom', code });
+  const joined = await third.until((m): m is Extract<ServerMessage, { t: 'room' }> => isRoom(m) && m.room?.you !== null);
+  expect(joined.room?.started).toBe(true);
+  expect(joined.room?.seats[joined.room!.you!]?.isBot).toBe(false);
+  const st = await third.until(isState);
+  expect(st.view.seat).toBe(joined.room!.you);
+  host.ws.close(); guest.ws.close(); third.ws.close();
+}, 30_000);
+
 it('加入不存在的房间和开局后加入都会被拒绝', async () => {
   const c = new Client(server.port);
   await c.open();

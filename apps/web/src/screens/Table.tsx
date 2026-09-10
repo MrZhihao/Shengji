@@ -208,24 +208,33 @@ export function Table({ client }: { client: GameClient }) {
   return (
     <div className="table">
       <header className="topbar">
+        <span className="tb-item tb-code" title="房间码">房 <b>{room.code}</b></span>
         <span className="tb-item">第 {view.round} 局</span>
         <span className="tb-item">级 <b>{rankName(view.level)}</b></span>
         <span className="tb-item">主 <b className={view.trumpSuit === 'H' || view.trumpSuit === 'D' ? 'red' : ''}>{view.trumpDecided ? suitName(view.trumpSuit) : '未定'}</b></span>
         <span className="tb-item">闲家 <b>{view.visibleOpponentPoints}</b></span>
         <span className="tb-item">底 {view.bottomCount}{view.phase === 'dealing' ? ` · 剩 ${view.deckRemaining}` : ''}</span>
         <button className="tb-btn" onClick={() => setSoundOn(sound.toggle())} aria-label="音效">{soundOn ? '🔊' : '🔇'}</button>
-        {room.youAreHost && <button className="tb-btn" onClick={() => setMenuOpen((v) => !v)} aria-label="房主菜单">⋯</button>}
+        <button className="tb-btn" onClick={() => setMenuOpen((v) => !v)} aria-label="菜单">⋯</button>
       </header>
-      {menuOpen && room.youAreHost && (
+      {menuOpen && (
         <div className="host-menu">
-          <button className="ghost small" onClick={() => {
-            setMenuOpen(false);
-            if (confirm('重发本局？当前进度作废，等级和庄家保留。')) send({ t: 'restartRound' });
-          }}>重发本局</button>
+          {room.youAreHost && (
+            <>
+              <button className="ghost small" onClick={() => {
+                setMenuOpen(false);
+                if (confirm('重发本局？当前进度作废，等级和庄家保留。')) send({ t: 'restartRound' });
+              }}>重发本局</button>
+              <button className="ghost small danger" onClick={() => {
+                setMenuOpen(false);
+                if (confirm('结束游戏回到大厅？所有人等级归零，座位保留。')) send({ t: 'abortGame' });
+              }}>结束游戏</button>
+            </>
+          )}
           <button className="ghost small danger" onClick={() => {
             setMenuOpen(false);
-            if (confirm('结束游戏回到大厅？所有人等级归零，座位保留。')) send({ t: 'abortGame' });
-          }}>结束游戏</button>
+            if (confirm(`退出本局？你的座位由机器人接管${room.youAreHost ? '，房主交给下一位真人' : ''}。之后用房间码 ${room.code} 重新进入可以接回机器人的座位。`)) send({ t: 'leaveRoom' });
+          }}>退出本局</button>
           <button className="ghost small" onClick={() => setMenuOpen(false)}>取消</button>
         </div>
       )}

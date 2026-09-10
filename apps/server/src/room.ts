@@ -176,9 +176,13 @@ export class Room {
   leave(token: string): void {
     const seat = this.seatOf(token);
     if (this.started && seat !== null) {
-      // 游戏中离开：座位保留，交给机器人接管
+      // 游戏中离开：座位交给机器人接管；房主离开则把房主交给下一位真人
       this.seats[seat] = { token: `bot:${seat}`, isBot: true };
       this.members.delete(token);
+      if (token === this.hostToken) {
+        const next = this.seats.find((s) => s && !s.isBot);
+        if (next) this.hostToken = next.token;
+      }
       this.broadcastRoom();
       this.afterChange([]);
       return;
@@ -194,6 +198,17 @@ export class Room {
       }
     }
     this.broadcastRoom();
+  }
+
+  /** 开局后进来的人接管一个机器人座位；没有机器人座位返回 false */
+  takeoverBot(token: string): boolean {
+    const i = this.seats.findIndex((s) => s?.isBot);
+    if (i < 0) return false;
+    this.seats[i] = { token, isBot: false };
+    if (this.botTimer) { clearTimeout(this.botTimer); this.botTimer = null; }
+    this.broadcastRoom();
+    this.afterChange([]);
+    return true;
   }
 
   sit(token: string, seat: Seat): void {
