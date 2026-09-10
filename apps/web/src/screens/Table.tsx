@@ -14,10 +14,10 @@ const GLYPH: Record<string, string> = { S: '♠', H: '♥', D: '♦', C: '♣' }
 const CN_NTH = ['一', '二', '三'];
 
 interface Pos { x: number; y: number }
-/** 对手座位在牌桌上的位置（百分比）。出牌逆时针，下家在我的右手边，依次绕到左手边 */
+/** 对手座位在牌桌上的位置（百分比）。牌桌只按横屏设计：出牌逆时针，下家在我的右手边，依次绕到左手边 */
 const SEAT_POS: Record<number, Pos[]> = {
-  4: [{ x: 85, y: 64 }, { x: 73, y: 18 }, { x: 27, y: 18 }, { x: 15, y: 64 }],
-  5: [{ x: 86, y: 66 }, { x: 81, y: 24 }, { x: 50, y: 10 }, { x: 19, y: 24 }, { x: 14, y: 66 }],
+  4: [{ x: 89, y: 56 }, { x: 70, y: 14 }, { x: 30, y: 14 }, { x: 11, y: 56 }],
+  5: [{ x: 90, y: 60 }, { x: 75, y: 14 }, { x: 50, y: 10 }, { x: 25, y: 14 }, { x: 10, y: 60 }],
 };
 const ME_POS: Pos = { x: 50, y: 104 };
 const CENTER: Pos = { x: 50, y: 52 };
@@ -57,8 +57,8 @@ function statusText(view: PlayerView, name: (s: Seat) => string): string {
 }
 
 /** 手牌分成两排：尽量在花色边界处切开，让同一花色不跨排。牌少于 8 张时只用一排。 */
-function splitHand(hand: readonly Card[], ctx: { level: number; trumpSuit: PlayerView['trumpSuit'] }): Card[][] {
-  if (hand.length < 8) return [[...hand]];
+function splitHand(hand: readonly Card[], ctx: { level: number; trumpSuit: PlayerView['trumpSuit'] }, rows: 1 | 2): Card[][] {
+  if (rows === 1 || hand.length < 8) return [[...hand]];
   const mid = hand.length / 2;
   let best = Math.ceil(mid);
   let bestDist = Infinity;
@@ -96,7 +96,7 @@ export function Table({ client }: { client: GameClient }) {
     return { opps, map };
   }, [me, n]);
   const posOf = (s: Seat): Pos => positions.map.get(s) ?? CENTER;
-  const playPosOf = (s: Seat): Pos => (s === me ? { x: 50, y: 84 } : towardCenter(posOf(s), 0.48));
+  const playPosOf = (s: Seat): Pos => (s === me ? { x: 50, y: 80 } : towardCenter(posOf(s), 0.5));
 
   // 手牌变化：清理失效选择，标记新发到的牌
   const newIds = useMemo(() => {
@@ -154,7 +154,7 @@ export function Table({ client }: { client: GameClient }) {
   const toggle = (id: string) => { sound.unlock(); setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id])); };
   const send = (m: ClientMessage) => client.send(m);
   const ctx = { level: view.level, trumpSuit: view.trumpSuit };
-  const handRows = useMemo(() => splitHand(view.hand, ctx), [view.hand, view.level, view.trumpSuit]);
+  const handRows = useMemo(() => splitHand(view.hand, ctx, 1), [view.hand, view.level, view.trumpSuit]);
 
   // 跟牌辅助：即时校验 + 灰显不该出的牌
   const lead = view.trick?.lead ?? null;
@@ -207,6 +207,7 @@ export function Table({ client }: { client: GameClient }) {
 
   return (
     <div className="table">
+      <div className="rotate-cover"><div className="rotate-icon">⟲</div><div>请把手机横过来</div><div className="hint">牌桌按横屏设计</div></div>
       <header className="topbar">
         <span className="tb-item tb-code" title="房间码">房 <b>{room.code}</b></span>
         <span className="tb-item">第 {view.round} 局</span>

@@ -213,3 +213,62 @@ b { font-weight: 700; }
 .trick-play.led .tp-name::after { content: ' 首出'; color: var(--muted); font-size: 11px; }
 .tp-name { font-size: 12px; display: flex; align-items: center; gap: 5px; color: var(--ink-2); }
 .tp-name .role { width: 18px; height: 18px; font-size: 11px; }
+
+
+/* 牌桌只按横屏设计：紧凑顶栏与座位牌，手牌单排，操作按钮靠右 */
+.topbar { padding: 3px 8px; padding-top: calc(3px + env(safe-area-inset-top)); font-size: 11px; gap: 4px; padding-left: calc(8px + env(safe-area-inset-left)); padding-right: calc(8px + env(safe-area-inset-right)); }
+.tb-item { padding: 1px 6px; }
+.tb-btn { font-size: 14px; padding: 0 4px; }
+.friends-line { padding: 2px 10px; font-size: 11px; }
+.host-menu { padding: 4px 8px; }
+.felt-ring { top: 6%; bottom: 8%; left: 9%; right: 9%; }
+.badge { padding: 3px 6px; min-width: 0; grid-template-columns: auto auto; column-gap: 5px; row-gap: 0; }
+.badge .role { width: 18px; height: 18px; font-size: 11px; border-radius: 5px; }
+.badge .b-name { font-size: 12px; max-width: 84px; }
+.badge .b-meta { font-size: 10px; gap: 4px; }
+.status { font-size: 13px; padding: 4px 10px; }
+.center-msg { gap: 4px; }
+.friend-form { padding: 8px 10px; gap: 6px; min-width: 240px; }
+.friend-form .panel-title { font-size: 13px; }
+.me { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; column-gap: 10px; row-gap: 2px;
+  padding: 3px 8px calc(4px + env(safe-area-inset-bottom)); padding-left: calc(8px + env(safe-area-inset-left)); padding-right: calc(8px + env(safe-area-inset-right)); }
+.me-head { grid-column: 1; grid-row: 1; min-height: 18px; font-size: 12px; }
+.hand { grid-column: 1; grid-row: 2; --w: 54px; padding: 12px 4px 2px; gap: 6px; }
+.hand .card.selected { transform: translateY(-10px); }
+.actions { grid-column: 2; grid-row: 1 / span 2; flex-direction: column; justify-content: flex-end; align-items: stretch; gap: 6px; }
+.actions .primary { min-width: 104px; padding: 9px 12px; }
+.actions .ghost { padding: 7px 12px; }
+.card.small { --w: 32px; width: 32px; height: 44px; }
+.card.small .corner .rank { font-size: 11px; }
+.card.small .corner .suit { font-size: 9px; }
+.play .card-row.small .card { margin-right: -12px; }
+.sheet { max-height: 96dvh; padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); gap: 6px; }
+.sheet-title { font-size: 16px; }
+
+/* 屏幕够高时（电脑、平板横屏）把牌面和文字放大 */
+@media (min-height: 600px) {
+  .topbar { font-size: 13px; padding: 6px 12px; }
+  .badge { padding: 5px 8px; }
+  .badge .b-name { font-size: 14px; max-width: 140px; }
+  .badge .b-meta { font-size: 12px; }
+  .badge .role { width: 22px; height: 22px; font-size: 12px; }
+  .status { font-size: 16px; padding: 6px 14px; }
+  .hand { --w: 76px; padding: 20px 8px 4px; }
+  .hand .card.selected { transform: translateY(-16px); }
+  .card .corner .rank { font-size: 19px; }
+  .card .pip { font-size: 34px; }
+  .card.small { --w: 40px; width: 40px; height: 56px; }
+  .card.small .corner .rank { font-size: 13px; }
+  .card.small .corner .suit { font-size: 11px; }
+  .actions .primary { min-width: 140px; padding: 12px 16px; }
+  .sheet-title { font-size: 20px; }
+}
+
+/* 竖屏时盖住牌桌，请玩家横过来 */
+.rotate-cover { display: none; }
+@media (orientation: portrait) {
+  .table > *:not(.rotate-cover) { display: none !important; }
+  .rotate-cover { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; height: 100dvh; font-size: 18px; font-weight: 700; }
+  .rotate-icon { font-size: 56px; color: var(--gold); animation: spin-hint 2.4s ease-in-out infinite; }
+}
+@keyframes spin-hint { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-90deg); } }
