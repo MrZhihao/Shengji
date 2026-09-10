@@ -474,6 +474,9 @@ export class Room {
     if (!this.humansOnline()) return; // 没有真人在线，机器人暂停
     const turn = currentTurn(this.state);
     if (turn === null || !this.seats[turn]?.isBot) return;
+    // 加强模式下搜索本身就是思考时间，固定等待缩短
+    const searching = this.botStrength === 'strong' && this.state.phase === 'playing';
+    const delay = searching ? Math.min(this.opts.botDelayMs, 300) : this.opts.botDelayMs;
     this.botTimer = setTimeout(() => {
       this.botTimer = null;
       if (!this.state || !this.humansOnline()) return;
@@ -485,7 +488,7 @@ export class Room {
       }
       const a = smartAction(this.state, t, this.rng);
       if (a) this.apply(a);
-    }, this.opts.botDelayMs);
+    }, delay);
   }
 
   /** 搜索机器人出牌：异步跑，期间局面若变了（重发、结束、有人接管）就丢弃结果 */
