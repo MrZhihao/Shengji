@@ -27,7 +27,7 @@ export interface RoomOptions {
   readonly searchBudgetMs: number;
 }
 
-export const defaultRoomOptions: RoomOptions = { dealIntervalMs: 150, declareGraceMs: 5000, botDelayMs: 900, searchBudgetMs: 900 };
+export const defaultRoomOptions: RoomOptions = { dealIntervalMs: 150, declareGraceMs: 5000, botDelayMs: 900, searchBudgetMs: 1100 };
 
 export class Room {
   readonly code: string;
@@ -477,7 +477,7 @@ export class Room {
     if (turn === null || !this.seats[turn]?.isBot) return;
     // 加强模式下搜索本身就是思考时间，固定等待缩短
     const searching = this.botStrength === 'strong' && (this.state.phase === 'playing' || this.state.phase === 'bottom' || this.state.phase === 'callFriend');
-    const delay = searching ? Math.min(this.opts.botDelayMs, 300) : this.opts.botDelayMs;
+    const delay = searching ? Math.min(this.opts.botDelayMs, 100) : this.opts.botDelayMs;
     this.botTimer = setTimeout(() => {
       this.botTimer = null;
       if (!this.state || !this.humansOnline()) return;
