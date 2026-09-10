@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupOf, ordinal, sortCards } from '../src/trump.ts';
+import { groupOf, ordinal, sortCards, suitDisplayOrder } from '../src/trump.ts';
 import { H5, NT5, c, cs } from './helpers.ts';
 
 describe('主牌与序位', () => {
@@ -36,8 +36,17 @@ describe('主牌与序位', () => {
     expect(ordinal(c('BJ'), NT5)).toBe(2);
   });
 
-  it('手牌排序：副牌在前，主牌在后，组内升序', () => {
-    const sorted = sortCards(cs('BJ ♥3 ♠A ♠2 ♣5 ♦9'), H5).map((x) => `${x.suit}${x.rank}`);
-    expect(sorted).toEqual(['S2', 'S14', 'D9', 'H3', 'C5', 'J16']);
+  it('手牌排序：副牌红黑交错在前，主牌在后，组内升序', () => {
+    // 主 ♥：剩 ♠ ♣ 两黑一红 ♦ → 黑红黑：♠ ♦ ♣
+    const sorted = sortCards(cs('BJ ♥3 ♠A ♠2 ♣5 ♦9 ♣7'), H5).map((x) => `${x.suit}${x.rank}`);
+    expect(sorted).toEqual(['S2', 'S14', 'D9', 'C7', 'H3', 'C5', 'J16']);
+  });
+
+  it('副牌花色顺序红黑交错', () => {
+    expect(suitDisplayOrder('H')).toEqual(['S', 'D', 'C']);
+    expect(suitDisplayOrder('S')).toEqual(['H', 'C', 'D']);
+    expect(suitDisplayOrder('D')).toEqual(['S', 'H', 'C']);
+    expect(suitDisplayOrder('C')).toEqual(['H', 'S', 'D']);
+    expect(suitDisplayOrder(null)).toEqual(['S', 'H', 'C', 'D']);
   });
 });

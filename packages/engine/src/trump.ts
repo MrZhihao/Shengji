@@ -52,9 +52,24 @@ export function commonGroup(cards: readonly Card[], ctx: TrumpCtx): Group | null
   return g;
 }
 
-/** 手牌排序：副牌按花色顺序，主牌在最后，组内按序位升序。 */
+/** 副牌花色的显示顺序：红黑交错，主牌组放最后。 */
+export function suitDisplayOrder(trumpSuit: Suit | null): Suit[] {
+  const blacks: Suit[] = (['S', 'C'] as Suit[]).filter((x) => x !== trumpSuit);
+  const reds: Suit[] = (['H', 'D'] as Suit[]).filter((x) => x !== trumpSuit);
+  // 多的颜色先放，然后交错：黑红黑（红）或 红黑红
+  const [more, less] = blacks.length >= reds.length ? [blacks, reds] : [reds, blacks];
+  const out: Suit[] = [];
+  for (let i = 0; i < Math.max(more.length, less.length); i++) {
+    if (more[i]) out.push(more[i] as Suit);
+    if (less[i]) out.push(less[i] as Suit);
+  }
+  return out;
+}
+
+/** 手牌排序：副牌按红黑交错的花色顺序，主牌在最后，组内按序位升序。 */
 export function sortCards(cards: readonly Card[], ctx: TrumpCtx): Card[] {
-  const groupRank = (g: Group): number => (g === 'T' ? 4 : ['S', 'H', 'C', 'D'].indexOf(g));
+  const order = suitDisplayOrder(ctx.trumpSuit);
+  const groupRank = (g: Group): number => (g === 'T' ? 4 : order.indexOf(g));
   return [...cards].sort((a, b) => {
     const ga = groupOf(a, ctx), gb = groupOf(b, ctx);
     if (ga !== gb) return groupRank(ga) - groupRank(gb);
