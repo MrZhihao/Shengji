@@ -1,7 +1,7 @@
 /** 与服务端的 WebSocket 连接：自动重连、会话 token 持久化。 */
 import { useEffect, useRef, useState } from 'react';
 import type { GameEvent, PlayerView } from '@shengji/engine';
-import type { ClientMessage, RoomInfo, RoundReplay, ServerMessage } from '@shengji/protocol';
+import type { ClientMessage, RoomInfo, RoomSummary, RoundReplay, ServerMessage } from '@shengji/protocol';
 import { checkForUpdate } from './pwa.ts';
 
 export interface Toast {
@@ -18,6 +18,8 @@ export interface GameClient {
   readonly events: readonly GameEvent[];
   readonly toasts: readonly Toast[];
   readonly replay: RoundReplay | null;
+  /** 服务器上现有的房间，进入首页后定时刷新 */
+  readonly rooms: readonly RoomSummary[] | null;
   send(msg: ClientMessage): void;
   closeReplay(): void;
   setName(name: string): void;
@@ -42,6 +44,7 @@ export function useGameClient(): GameClient {
   const [events, setEvents] = useState<readonly GameEvent[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [replay, setReplay] = useState<RoundReplay | null>(null);
+  const [rooms, setRooms] = useState<readonly RoomSummary[] | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const nameRef = useRef(name);
   const toastId = useRef(0);
@@ -85,6 +88,7 @@ export function useGameClient(): GameClient {
             setView(msg.view); setEvents(msg.events); break;
           case 'error': pushToast('error', msg.message); break;
           case 'replay': setReplay(msg.replay); break;
+          case 'rooms': setRooms(msg.rooms); break;
           case 'pong': break;
         }
       };
@@ -126,7 +130,7 @@ export function useGameClient(): GameClient {
   };
 
   return {
-    connected, name, room, view, events, toasts, replay, send, setName,
+    connected, name, room, view, events, toasts, replay, rooms, send, setName,
     closeReplay: () => setReplay(null),
     dismissToast: (id) => setToasts((t) => t.filter((x) => x.id !== id)),
   };

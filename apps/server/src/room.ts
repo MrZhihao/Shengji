@@ -3,7 +3,7 @@ import {
   applyAction, createGame, createRng, currentTurn, defaultConfig, restartRound, smartAction, smartDeclare, viewFor,
   type Action, type GameConfig, type GameEvent, type GameState, type Rng, type Seat,
 } from '@shengji/engine';
-import type { RoomInfo, RoundReplay, ServerMessage } from '@shengji/protocol';
+import type { RoomInfo, RoomSummary, RoundReplay, ServerMessage } from '@shengji/protocol';
 import type { WebSocket } from 'ws';
 import type { RoomSnapshot } from './store.ts';
 
@@ -128,6 +128,34 @@ export class Room {
       started: this.started,
       you: this.seatOf(forToken),
       youAreHost: forToken === this.hostToken,
+    };
+  }
+
+  summary(): RoomSummary {
+    let humans = 0, online = 0, bots = 0;
+    const names: string[] = [];
+    for (const [i, slot] of this.seats.entries()) {
+      if (!slot) continue;
+      if (slot.isBot) { bots++; continue; }
+      humans++;
+      const m = this.members.get(slot.token);
+      if (m?.socket && m.socket.readyState === m.socket.OPEN) online++;
+      names.push(this.nameOfSeat(i, slot));
+    }
+    const hostSeat = this.seatOf(this.hostToken);
+    return {
+      code: this.code,
+      players: this.config.players,
+      started: this.started,
+      round: this.state?.round ?? 0,
+      phase: this.state?.phase ?? null,
+      humans,
+      humansOnline: online,
+      bots,
+      names,
+      hostName: hostSeat !== null ? this.nameOfSeat(hostSeat, this.seats[hostSeat] ?? null) : (this.members.get(this.hostToken)?.name ?? '?'),
+      joinable: this.seats.some((s) => !s || s.isBot),
+      lastActivity: this.lastActivity,
     };
   }
 

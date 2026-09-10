@@ -47,6 +47,12 @@ b { font-weight: 700; }
 .row { display: flex; gap: 8px; }
 .code { flex: 1; text-transform: uppercase; letter-spacing: .3em; font-weight: 700; text-align: center; }
 
+.room-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.room-row:first-of-type { border-top: 0; }
+.room-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.room-code { font-weight: 800; letter-spacing: .2em; color: var(--gold); }
+.room-meta { font-size: 12px; color: var(--ink-2); }
+.room-names { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .build { margin-top: auto; padding-top: 12px; text-align: center; font-size: 11px; color: var(--muted); }
 
 /* 大厅 */

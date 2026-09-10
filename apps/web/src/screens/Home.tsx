@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { GameClient } from '../ws.ts';
 import { buildTime } from '../pwa.ts';
 
@@ -7,6 +7,26 @@ export function Home({ client }: { client: GameClient }) {
   const [code, setCode] = useState(() => (new URLSearchParams(location.search).get('room') ?? '').toUpperCase().slice(0, 4));
   const [players, setPlayers] = useState<5 | 6>(6);
   const ready = name.trim().length > 0;
+
+  // 已登记名字后，每 4 秒刷新一次服务器上的房间
+  useEffect(() => {
+    if (!client.connected || !client.name) return;
+    client.send({ t: 'listRooms' });
+    const t = setInterval(() => client.send({ t: 'listRooms' }), 4000);
+    return () => clearInterval(t);
+  }, [client.connected, client.name]);
+
+  const phaseText = (r: NonNullable<typeof client.rooms>[number]) => {
+    if (!r.started) return '等人中';
+    switch (r.phase) {
+      case 'dealing': case 'declaring': return `第 ${r.round} 局 发牌`;
+      case 'bottom': case 'callFriend': return `第 ${r.round} 局 扣底`;
+      case 'playing': return `第 ${r.round} 局 打牌中`;
+      case 'roundEnd': return `第 ${r.round} 局 结算`;
+      case 'gameOver': return '已结束';
+      default: return `第 ${r.round} 局`;
+    }
+  };
 
   const ensureName = () => {
     if (name.trim() !== client.name) client.setName(name);
@@ -40,6 +60,25 @@ export function Home({ client }: { client: GameClient }) {
           </button>
         </div>
       </div>
+      {client.name && (
+        <div className="panel">
+          <div className="panel-title">服务器上的房间</div>
+          {client.rooms === null && <div className="hint">加载中…</div>}
+          {client.rooms && client.rooms.length === 0 && <div className="hint">现在没有房间，开一个吧</div>}
+          {client.rooms?.map((r) => (
+            <div key={r.code} className="room-row">
+              <div className="room-main">
+                <span className="room-code">{r.code}</span>
+                <span className="room-meta">{r.players} 人 · {phaseText(r)} · 房主 {r.hostName}</span>
+                <span className="room-names">{r.names.join('、')}{r.bots ? `${r.names.length ? '、' : ''}机器人×${r.bots}` : ''}{r.humansOnline < r.humans ? ` · ${r.humans - r.humansOnline} 人离线` : ''}</span>
+              </div>
+              <button className="ghost small" disabled={!r.joinable} onClick={() => { ensureName(); setTimeout(() => client.send({ t: 'joinRoom', code: r.code }), 50); }}>
+                {r.joinable ? (r.started ? '接管机器人' : '进入') : '已满'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="build">版本 {buildTime}</div>
     </div>
   );

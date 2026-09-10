@@ -14,6 +14,7 @@ export const friendCallSchema = z.object({
 export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('hello'), name: z.string().trim().min(1).max(12), token: z.string().min(8).max(64).optional() }),
   z.object({ t: z.literal('createRoom'), players: z.union([z.literal(5), z.literal(6)]) }),
+  z.object({ t: z.literal('listRooms') }),
   z.object({ t: z.literal('joinRoom'), code: z.string().trim().length(4) }),
   z.object({ t: z.literal('leaveRoom') }),
   z.object({ t: z.literal('sit'), seat: z.number().int().min(0).max(5) }),
@@ -60,12 +61,30 @@ export interface RoomInfo {
   readonly youAreHost: boolean;
 }
 
+/** 首页显示的服务器房间概览 */
+export interface RoomSummary {
+  readonly code: string;
+  readonly players: 5 | 6;
+  readonly started: boolean;
+  readonly round: number;
+  readonly phase: string | null;
+  readonly humans: number;
+  readonly humansOnline: number;
+  readonly bots: number;
+  readonly names: readonly string[];
+  readonly hostName: string;
+  /** 有空位或机器人座位可以进 */
+  readonly joinable: boolean;
+  readonly lastActivity: number;
+}
+
 export type ServerMessage =
   | { readonly t: 'welcome'; readonly token: string; readonly name: string }
   | { readonly t: 'room'; readonly room: RoomInfo | null }
   | { readonly t: 'state'; readonly seq: number; readonly view: PlayerView; readonly events: readonly GameEvent[] }
   | { readonly t: 'error'; readonly code: string; readonly message: string }
   | { readonly t: 'replay'; readonly replay: RoundReplay }
+  | { readonly t: 'rooms'; readonly rooms: readonly RoomSummary[] }
   | { readonly t: 'pong' };
 
 export function parseClientMessage(raw: string): ClientMessage | null {

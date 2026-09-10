@@ -199,6 +199,7 @@ WebSocket，JSON 文本帧，路径 `/ws`。所有消息带 `t` 字段。
 |---|---|---|
 | hello | name, token? | 建立或恢复会话，token 存在 localStorage |
 | createRoom | config | 返回 roomCode，创建者为房主 |
+| listRooms | – | 首页列出服务器上现有的房间：人数、进度、房主、在座的人、是否可进 |
 | joinRoom | roomCode | 进入大厅；房间已开局时接管一个机器人座位 |
 | sit / stand | seat | 选座、离座 |
 | leaveRoom | – | 离开房间；游戏中退出则座位由机器人接管，房主顺延给下一位真人 |

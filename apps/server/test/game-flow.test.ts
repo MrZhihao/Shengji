@@ -266,6 +266,22 @@ it('没有真人在线时机器人暂停，真人回来后继续', async () => {
   c2.ws.close();
 }, 30_000);
 
+it('首页能列出服务器上的房间', async () => {
+  const c = new Client(server.port);
+  await c.open();
+  c.send({ t: 'hello', name: '看客' });
+  await c.next(); await c.next();
+  c.send({ t: 'listRooms' });
+  const m = await c.until((x): x is Extract<ServerMessage, { t: 'rooms' }> => x.t === 'rooms');
+  expect(Array.isArray(m.rooms)).toBe(true);
+  expect(m.rooms.length).toBeGreaterThan(0);
+  const r = m.rooms[0]!;
+  expect(r.code).toHaveLength(4);
+  expect(typeof r.joinable).toBe('boolean');
+  expect(r.humans + r.bots).toBeGreaterThan(0);
+  c.ws.close();
+});
+
 it('加入不存在的房间和开局后加入都会被拒绝', async () => {
   const c = new Client(server.port);
   await c.open();

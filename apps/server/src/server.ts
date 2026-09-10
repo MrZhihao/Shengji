@@ -102,6 +102,14 @@ wss.on('connection', (ws: AliveSocket) => {
 
     switch (msg.t) {
       case 'ping': return send(ws, { t: 'pong' });
+      case 'listRooms': {
+        const rooms = [...registry.rooms.values()]
+          .map((r) => r.summary())
+          .filter((r) => r.humans > 0 || r.bots > 0)
+          .sort((a, b) => b.lastActivity - a.lastActivity)
+          .slice(0, 20);
+        return send(ws, { t: 'rooms', rooms });
+      }
       case 'createRoom': {
         room()?.leave(token);
         const r = registry.createRoom(token, msg.players);
