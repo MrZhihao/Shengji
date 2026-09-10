@@ -62,6 +62,23 @@ describe('整局流程', () => {
     if (!r.ok) expect(r.error.code).toBe('DECLARATION_TOO_WEAK');
   });
 
+  it('非首局反主只改主花色，庄家不变', () => {
+    let s = dealAll({ ...createGame(defaultConfig(6), 'override'), round: 2, dealer: 2 });
+    const first = s.hands.findIndex((h, i) => i !== 2 && h.some((c) => c.rank === 5 && c.suit !== 'J'));
+    const card = s.hands[first]!.find((c) => c.rank === 5 && c.suit !== 'J')!;
+    s = must(applyAction(s, { type: 'declare', seat: first, cards: [card.id] }));
+    expect(s.dealer).toBe(2);
+    expect(s.trumpSuit).toBe(card.suit);
+    const other = s.hands.findIndex((h, i) => i !== first && h.filter((c) => c.rank === 5 && c.suit !== 'J' && c.suit !== card.suit).length >= 2);
+    if (other >= 0) {
+      const pair = s.hands[other]!.filter((c) => c.rank === 5 && c.suit !== 'J' && c.suit !== card.suit).slice(0, 2);
+      s = must(applyAction(s, { type: 'declare', seat: other, cards: pair.map((c) => c.id) }));
+      expect(s.declaration?.seat).toBe(other);
+      expect(s.trumpSuit).toBe(pair[0]!.suit);
+      expect(s.dealer).toBe(2);
+    }
+  });
+
   it('单张王不能亮，两张王亮无主', () => {
     let s = dealAll(createGame(defaultConfig(6), 'joker'));
     const seat = s.hands.findIndex((h) => h.filter((c) => c.rank === 16).length >= 2);

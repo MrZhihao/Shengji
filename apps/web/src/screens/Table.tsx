@@ -43,7 +43,11 @@ function statusText(view: PlayerView, name: (s: Seat) => string): string {
   const me = view.seat;
   switch (view.phase) {
     case 'dealing': return view.declaration ? `${name(view.declaration.seat)} 亮了 ${view.declaration.count} 张，更多张可以反` : '发牌中，有级牌或对王可以亮主';
-    case 'declaring': return view.declaration ? `${suitName(view.trumpSuit)}为主，${name(view.declaration.seat)} 坐庄` : '无人亮主，即将翻底牌';
+    case 'declaring': {
+      // 反主只改主花色，不改庄家：只有首局才是先亮主者坐庄
+      const dealerText = view.dealer !== null ? `，${name(view.dealer)} 坐庄` : '';
+      return view.declaration ? `${name(view.declaration.seat)} 亮 ${suitName(view.trumpSuit)}为主${dealerText}` : '无人亮主，即将翻底牌';
+    }
     case 'bottom': return view.dealer === me ? '你是庄家，选 ' + view.config.bottomSize + ' 张扣底' : `${name(view.dealer!)} 正在扣底`;
     case 'callFriend': return view.dealer === me ? '叫朋友' : `${name(view.dealer!)} 正在叫朋友`;
     case 'playing': return view.currentTurn === me ? (view.trick?.plays.length ? '轮到你跟牌' : '轮到你出牌') : `等 ${name(view.currentTurn!)} 出牌`;
