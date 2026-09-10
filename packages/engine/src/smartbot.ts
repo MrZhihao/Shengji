@@ -470,9 +470,11 @@ function leadCandidates(s: GameState, seat: Seat, sides: Sides, unseen: Map<stri
         // 庄家先找朋友：用朋友牌花色里比朋友牌小的牌引牌，让握着朋友牌的人尽早现身并赢墩。
         // 越早越值得，前几墩加得多；单张最好，小对子也行
         const call = unresolvedCalls.find((c) => c.suit === g);
-        if (call && (comp.kind === 'single' || comp.kind === 'pair') && comp.cards.every((c) => c.rank !== call.rank && ordinal(c, ctx) < ordinal({ ...c, rank: call.rank }, ctx))) {
-          const early = Math.max(0, 8 - s.tricks.length);
-          score += 30 + early * 4 - (comp.kind === 'pair' ? 8 : 0);
+        if (call && comp.kind === 'single' && pts === 0 && trumpCount >= 7
+          && comp.cards.every((c) => c.rank !== call.rank && ordinal(c, ctx) < ordinal({ ...c, rank: call.rank }, ctx))) {
+          // 只在开局前几墩、主牌够硬、用无分小单张时去找：送掉一墩换来知道队友是谁
+          const early = Math.max(0, 4 - s.tricks.length);
+          score += 18 + early * 3;
         }
       }
       // 最后几墩：能赢就赢，末墩关系到抠底
