@@ -554,7 +554,10 @@ function leadCandidates(s: GameState, seat: Seat, sides: Sides, unseen: Map<stri
         score = 100 + comp.cards.length * 10 + pts * 2;
         if (g === 'T' && !sides.likelyDealerSide && trumpCount < 6) score -= 30; // 闲家别急着放主
       } else if (g === 'T') {
-        score = (sides.likelyDealerSide && trumpCount >= 8 ? 60 : 15) - comp.top - pts * 4 - (comp.cards.length - 1) * 8;
+        // 庄家阵营主牌够多就拉主，朋友都现身后配合更明确，门槛放低
+        const allKnown = s.friendCalls.length > 0 && s.friendCalls.every((c) => c.resolvedSeat !== null);
+        const drawTrumps = sides.likelyDealerSide && trumpCount >= (allKnown ? 7 : 8);
+        score = (drawTrumps ? 60 : 15) - comp.top - pts * 4 - (comp.cards.length - 1) * 8;
       } else {
         score = 40 - comp.top - pts * 5 + Math.max(0, 8 - cards.length) * 2 - (comp.cards.length - 1) * 6;
         // 庄家先找朋友：用朋友牌花色里比朋友牌小的牌引牌，让握着朋友牌的人尽早现身并赢墩。
@@ -574,9 +577,9 @@ function leadCandidates(s: GameState, seat: Seat, sides: Sides, unseen: Map<stri
       // 最后几墩：能赢就赢，末墩关系到抠底
       if (lastTrick && isSafe) score += 30;
       if (f.lead && g !== 'T' && trumpsOutside > 0) {
-        // 对手已经断门会来毙，尤其别送分；队友断门则可以喂他毙
+        // 对手已经断门会来毙，尤其别送分；队友断门则可以喂他毙，带分的牌最好
         if (foeVoid(g)) score -= isSafe ? 45 : 10 + pts * 3;
-        else if (mateVoid(g) && !isSafe) score += 18 + pts * 2;
+        else if (mateVoid(g) && !isSafe) score += 22 + pts * 4;
       }
       out.push({ cards: [...comp.cards], score });
     }
@@ -637,17 +640,30 @@ function ruffCandidates(s: GameState, seat: Seat): Card[][] {
   return out;
 }
 
-/** 目前赢家的牌后面的人还压得住吗？只在主牌首出时可判断，副牌首出后面可能有人毙。 */
+/**
+ * 目前赢家的牌后面的人还压得住吗？
+ * 主牌首出：看外面还有没有更大的主。
+ * 副牌首出：赢家若是本门大牌，要求本门外面没有更大的，且后面还没出牌的人没有一个已知断门（否则会毙）；
+ * 赢家若已用主牌毙，要求外面没有更大的主。
+ */
 function winnerSecure(s: GameState, seat: Seat, plays: TrickPlay[], winnerIdx: number, unseen: Map<string, number>): boolean {
   const lead = s.trick?.lead;
-  if (!lead || lead.group !== 'T') return false;
+  if (!lead) return false;
   const ctx = ctxOf(s);
   const d = decompose((plays[winnerIdx] as TrickPlay).cards, ctx);
-  if (!d || d.group !== 'T') return false;
+  if (!d) return false;
   const top = d.components[0];
   if (!top) return false;
-  void seat;
-  return !beatable(top, 'T', unseen, ctx);
+  if (lead.group === 'T' || d.group === 'T') return !beatable(top, 'T', unseen, ctx);
+  if (beatable(top, lead.group, unseen, ctx)) return false;
+  // 后面还没出的人里，有人已知断这门就可能毙
+  const played = new Set(plays.map((p) => p.seat));
+  const voids = knownVoids(s);
+  for (let i = 0; i < s.config.players; i++) {
+    if (played.has(i) || i === seat) continue;
+    if (voids.get(i)?.has(lead.group)) return false;
+  }
+  return true;
 }
 
 function evaluateFollow(s: GameState, seat: Seat, sides: Sides, cards: Card[], f: SmartFeatures, unseen: Map<string, number> | null): number {
@@ -676,6 +692,18 @@ function evaluateFollow(s: GameState, seat: Seat, sides: Sides, cards: Card[], f
       const factor = secure ? 1 : winner === seat ? 0.55 : 0.7;
       score += pts * factor + (secure ? 4 : 2);
       if (isLastTrick) score += 45; // 末墩：闲家抠底、庄家保底
+      // 配合：队友稳赢时，把自己手里的分牌喂上去（用分牌而不是留着）
+      if (secure && winner !== seat) {
+        let mine = 0;
+        for (const c of cards) mine += cardPoints(c);
+        score += mine * 0.6;
+      }
+      // 配合：队友本来就在赢，自己再用更大的牌抢过来没有意义，除非是把不稳变稳
+      if (winner === seat && plays.length >= 2) {
+        const before = trickWinner(plays.slice(0, -1), trick.lead!, ctx);
+        const prevWinner = (plays[before] as TrickPlay).seat;
+        if (sides.mates.has(prevWinner) && prevWinner !== seat && !secure) score -= 4;
+      }
     } else {
       score -= pts + 1;
       if (isLastTrick) score -= 45;
