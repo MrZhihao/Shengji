@@ -41,7 +41,15 @@ pnpm dev:web       # http://localhost:5173，会打印局域网地址，同一 W
 
 ## 部署到 Fly.io
 
-仓库自带 `Dockerfile` 和 `fly.toml`（纽瓦克 ewr 机房，一台常驻机器，1GB 卷挂在 /data 存快照）。
+线上地址：https://shengji-zhaopengyou.fly.dev （Fly 应用名 `shengji-zhaopengyou`，纽瓦克 ewr 机房）。
+
+仓库自带 `Dockerfile` 和 `fly.toml`（一台常驻机器，1GB 卷挂在 /data 存快照）。改完代码重新上线只需：
+
+```bash
+fly deploy --ha=false
+```
+
+首次在新账号下部署的步骤：
 
 ```bash
 fly launch --no-deploy --copy-config --name <你的应用名>
