@@ -166,6 +166,35 @@ it('真人 + 5 个机器人通过 WebSocket 打完两局', async () => {
   c2.ws.close();
 }, 90_000);
 
+it('房主可以重发本局和结束游戏回大厅', async () => {
+  const c = new Client(server.port);
+  await c.open();
+  c.send({ t: 'hello', name: '房主' });
+  await c.next();
+  await c.next();
+  c.send({ t: 'createRoom', players: 5 });
+  await c.until(isRoom);
+  for (let seat = 1; seat < 5; seat++) c.send({ t: 'addBot', seat });
+  await c.until((m): m is Extract<ServerMessage, { t: 'room' }> => isRoom(m) && m.room?.seats.every(Boolean) === true);
+  c.send({ t: 'start' });
+  let st = await c.until(isState);
+  for (let i = 0; i < 10; i++) st = await c.until(isState); // 发几张牌
+  expect(st.view.hand.length).toBeGreaterThan(0);
+  c.send({ t: 'restartRound' });
+  const restarted = await c.until((m): m is Extract<ServerMessage, { t: 'state' }> => isState(m) && m.events.some((e) => e.type === 'roundRestarted'));
+  expect(restarted.view.round).toBe(1);
+  expect(restarted.view.hand.length).toBeLessThanOrEqual(1);
+  c.send({ t: 'abortGame' });
+  const lobby = await c.until((m): m is Extract<ServerMessage, { t: 'room' }> => isRoom(m) && m.room?.started === false);
+  expect(lobby.room?.seats.filter(Boolean).length).toBe(5);
+  // 还能再开一局
+  c.send({ t: 'start' });
+  const again = await c.until(isState);
+  expect(again.view.round).toBe(1);
+  expect(again.view.levels.every((l) => l === 0)).toBe(true);
+  c.ws.close();
+}, 30_000);
+
 it('加入不存在的房间和开局后加入都会被拒绝', async () => {
   const c = new Client(server.port);
   await c.open();

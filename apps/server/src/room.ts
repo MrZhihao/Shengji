@@ -1,6 +1,6 @@
 /** 一个房间：大厅座位管理 + 驾驭引擎状态机 + 机器人 + 广播。 */
 import {
-  applyAction, createGame, createRng, currentTurn, defaultConfig, smartAction, smartDeclare, viewFor,
+  applyAction, createGame, createRng, currentTurn, defaultConfig, restartRound, smartAction, smartDeclare, viewFor,
   type Action, type GameConfig, type GameEvent, type GameState, type Rng, type Seat,
 } from '@shengji/engine';
 import type { RoomInfo, RoundReplay, ServerMessage } from '@shengji/protocol';
@@ -255,6 +255,30 @@ export class Room {
     this.afterChange(r.events);
   }
 
+  /** 房主重发本局 */
+  restartRound(token: string): void {
+    if (token !== this.hostToken) return this.error(token, 'NOT_HOST', '只有房主能重发本局');
+    if (!this.state) return this.error(token, 'NOT_STARTED', '游戏还没开始');
+    if (this.state.phase === 'gameOver') return this.error(token, 'WRONG_PHASE', '游戏已经结束，请回大厅重新开始');
+    this.dispose();
+    const r = restartRound(this.state);
+    this.state = r.state;
+    this.beginRoundLog(r.state);
+    this.lastActivity = Date.now();
+    this.afterChange(r.events);
+  }
+
+  /** 房主结束游戏：回到大厅，座位与机器人保留，等级从头开始 */
+  abortGame(token: string): void {
+    if (token !== this.hostToken) return this.error(token, 'NOT_HOST', '只有房主能结束游戏');
+    if (!this.state) return this.error(token, 'NOT_STARTED', '游戏还没开始');
+    this.dispose();
+    this.state = null;
+    this.seq++;
+    this.lastActivity = Date.now();
+    this.broadcastRoom();
+  }
+
   private beginRoundLog(initial: GameState): void {
     this.roundLogs.push({ round: initial.round, initial, actions: [], names: this.seats.map((s, i) => this.nameOfSeat(i, s)) });
     if (this.roundLogs.length > 6) this.roundLogs.shift();
@@ -371,7 +395,7 @@ export class Room {
   dispose(): void {
     this.clearTimer('deal');
     this.clearTimer('grace');
-    if (this.botTimer) clearTimeout(this.botTimer);
+    if (this.botTimer) { clearTimeout(this.botTimer); this.botTimer = null; }
   }
 }
 

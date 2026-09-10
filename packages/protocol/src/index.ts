@@ -26,6 +26,8 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('callFriend'), calls: z.array(friendCallSchema).min(1).max(2) }),
   z.object({ t: z.literal('play'), cards: cardIds }),
   z.object({ t: z.literal('nextRound') }),
+  z.object({ t: z.literal('restartRound') }),
+  z.object({ t: z.literal('abortGame') }),
   z.object({ t: z.literal('getReplay'), round: z.number().int().min(1) }),
   z.object({ t: z.literal('ping') }),
 ]);

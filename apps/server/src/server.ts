@@ -143,6 +143,8 @@ wss.on('connection', (ws: AliveSocket) => {
       case 'removeBot': return r.removeBot(token, msg.seat);
       case 'start': return r.start(token);
       case 'nextRound': return r.act(token, { type: 'nextRound' });
+      case 'restartRound': return r.restartRound(token);
+      case 'abortGame': return r.abortGame(token);
       case 'getReplay': return r.replayFor(token, msg.round);
       default: break;
     }

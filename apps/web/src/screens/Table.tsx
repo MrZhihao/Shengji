@@ -80,6 +80,7 @@ export function Table({ client }: { client: GameClient }) {
   const [flash, setFlash] = useState<string | null>(null);
   const [linger, setLinger] = useState<{ trick: typeof view.lastTrick; until: number } | null>(null);
   const [soundOn, setSoundOn] = useState(sound.enabled);
+  const [menuOpen, setMenuOpen] = useState(false);
   const prevHandIds = useRef<Set<string>>(new Set());
   const prevTurn = useRef<boolean>(false);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -122,6 +123,7 @@ export function Table({ client }: { client: GameClient }) {
         case 'declared': texts.push(`${name(e.seat)} 亮 ${e.count} 张${e.suit ? GLYPH[e.suit] : '王'}`); break;
         case 'declaringClosed': if (e.byBottom) texts.push(`无人亮主，翻底牌定${suitName(e.trumpSuit)}`); break;
         case 'redeal': texts.push('无人亮主，重新发牌'); break;
+        case 'roundRestarted': texts.push('房主重发了本局'); break;
         default: break;
       }
     }
@@ -212,7 +214,21 @@ export function Table({ client }: { client: GameClient }) {
         <span className="tb-item">闲家 <b>{view.visibleOpponentPoints}</b></span>
         <span className="tb-item">底 {view.bottomCount}{view.phase === 'dealing' ? ` · 剩 ${view.deckRemaining}` : ''}</span>
         <button className="tb-btn" onClick={() => setSoundOn(sound.toggle())} aria-label="音效">{soundOn ? '🔊' : '🔇'}</button>
+        {room.youAreHost && <button className="tb-btn" onClick={() => setMenuOpen((v) => !v)} aria-label="房主菜单">⋯</button>}
       </header>
+      {menuOpen && room.youAreHost && (
+        <div className="host-menu">
+          <button className="ghost small" onClick={() => {
+            setMenuOpen(false);
+            if (confirm('重发本局？当前进度作废，等级和庄家保留。')) send({ t: 'restartRound' });
+          }}>重发本局</button>
+          <button className="ghost small danger" onClick={() => {
+            setMenuOpen(false);
+            if (confirm('结束游戏回到大厅？所有人等级归零，座位保留。')) send({ t: 'abortGame' });
+          }}>结束游戏</button>
+          <button className="ghost small" onClick={() => setMenuOpen(false)}>取消</button>
+        </div>
+      )}
       {view.friendCalls.length > 0 && <div className="friends-line">朋友牌：{friendText.join('　')}</div>}
 
       <section className="felt">

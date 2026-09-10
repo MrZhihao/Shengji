@@ -60,6 +60,7 @@ export function createGame(config: GameConfig, seed: string, opts: CreateOptions
     hands: Array.from({ length: n }, () => []),
     bottom: [],
     dealTurn: opts.firstDealSeat ?? 0,
+    firstDealSeat: opts.firstDealSeat ?? 0,
     friendCalls: [],
     friends: [],
     trick: null,
@@ -396,6 +397,25 @@ function endRound(s: GameState, lastWinner: Seat, lastLead: Decomposition, event
   };
   if (gameOver) events.push({ type: 'gameOver', winners: team });
   return ok(next, events);
+}
+
+/**
+ * 房主重发本局：等级、局数、庄家（非首局）都保留，当前进度作废，换一副新牌重新发。
+ * 首局重发时庄家也清空，仍由先亮主者坐庄。
+ */
+export function restartRound(s: GameState): { state: GameState; events: GameEvent[] } {
+  if (s.phase === 'gameOver') return { state: s, events: [] };
+  const firstRound = s.round === 1;
+  const dealer = firstRound ? null : s.dealer;
+  const base: GameState = {
+    ...s,
+    dealer,
+    level: dealer === null ? levelRank(0) : levelRank(s.levels[dealer] as number),
+    redeals: s.redeals + 1,
+    winners: null,
+  };
+  const start = dealer === null ? (s.firstDealSeat ?? 0) : nextSeat(s, dealer);
+  return { state: startDealing(base, start), events: [{ type: 'roundRestarted' }] };
 }
 
 function nextRound(s: GameState): ApplyResult {

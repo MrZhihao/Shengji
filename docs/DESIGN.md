@@ -207,6 +207,9 @@ WebSocket，JSON 文本帧，路径 `/ws`。所有消息带 `t` 字段。
 | callFriend | calls[] | `{suit, rank, nth}` |
 | play | cardIds[] | 出牌 |
 | addBot / removeBot | seat | 房主往空位添加或移除机器人 |
+| restartRound | – | 房主重发本局：等级、局数、庄家保留，当前进度作废 |
+| abortGame | – | 房主结束游戏回大厅：座位与机器人保留，等级归零 |
+| getReplay | round | 请求某一局的回放 |
 | ping | – | 保活 |
 
 服务端 → 客户端：

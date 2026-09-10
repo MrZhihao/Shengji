@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultConfig, handSize } from '../src/config.ts';
-import { applyAction, createGame } from '../src/reducer.ts';
+import { applyAction, createGame, restartRound } from '../src/reducer.ts';
 import { simulateGame } from '../src/sim/run.ts';
 import { viewFor } from '../src/view.ts';
 import type { GameState } from '../src/state.ts';
@@ -115,6 +115,36 @@ describe('整局流程', () => {
     s = must(applyAction(s, { type: 'callFriend', seat, calls: [{ suit: offSuit, rank: 14, nth: 1 }, { suit: offSuit, rank: 14, nth: 2 }] }));
     expect(s.phase).toBe('playing');
     expect(s.trick?.leader).toBe(seat);
+  });
+});
+
+describe('重发本局', () => {
+  it('首局重发：庄家清空，牌重新洗过', () => {
+    let s = dealAll(createGame(defaultConfig(6), 'restart'));
+    const seat = s.hands.findIndex((h) => h.some((c) => c.rank === 5 && c.suit !== 'J'));
+    const card = s.hands[seat]!.find((c) => c.rank === 5 && c.suit !== 'J')!;
+    s = must(applyAction(s, { type: 'declare', seat, cards: [card.id] }));
+    const before = s.hands[0]!.map((c) => c.id);
+    const r = restartRound(s);
+    expect(r.events[0]?.type).toBe('roundRestarted');
+    expect(r.state.phase).toBe('dealing');
+    expect(r.state.dealer).toBeNull();
+    expect(r.state.round).toBe(1);
+    expect(r.state.hands.every((h) => h.length === 0)).toBe(true);
+    const again = dealAll(r.state);
+    expect(again.hands[0]!.map((c) => c.id)).not.toEqual(before);
+  });
+
+  it('非首局重发：等级、局数、庄家保留', () => {
+    const base = { ...createGame(defaultConfig(5), 'restart2'), round: 3, dealer: 4, levels: [2, 0, 1, 0, 3], level: 2 };
+    const s = dealAll(base);
+    const r = restartRound(s);
+    expect(r.state.round).toBe(3);
+    expect(r.state.dealer).toBe(4);
+    expect(r.state.levels).toEqual([2, 0, 1, 0, 3]);
+    expect(r.state.level).toBe(2);
+    expect(r.state.dealTurn).toBe(0);
+    expect(r.state.redeals).toBe(1);
   });
 });
 

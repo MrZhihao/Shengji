@@ -82,6 +82,8 @@ export interface GameState {
   readonly hands: readonly (readonly Card[])[];
   readonly bottom: readonly Card[];
   readonly dealTurn: Seat;
+  /** 首局从谁开始发牌，重发首局时沿用 */
+  readonly firstDealSeat: Seat;
   readonly friendCalls: readonly FriendCall[];
   readonly friends: readonly Seat[];
   readonly trick: Trick | null;
@@ -105,6 +107,7 @@ export type GameEvent =
   | { readonly type: 'cardDealt'; readonly seat: Seat; readonly card: Card }
   | { readonly type: 'declared'; readonly seat: Seat; readonly cards: readonly Card[]; readonly suit: Suit | null; readonly count: number }
   | { readonly type: 'redeal' }
+  | { readonly type: 'roundRestarted' }
   | { readonly type: 'declaringClosed'; readonly trumpSuit: Suit | null; readonly byBottom: boolean }
   | { readonly type: 'bottomTaken'; readonly seat: Seat; readonly count: number }
   | { readonly type: 'bottomExchanged'; readonly seat: Seat }
