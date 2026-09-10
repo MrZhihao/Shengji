@@ -41,7 +41,7 @@ function featuresOf(level: SmartLevel): SmartFeatures {
 // ---------- 记牌 ----------
 
 /** 每个身份还有多少张在别人手里（或未知的底牌里）。 */
-function unseenCounts(s: GameState, seat: Seat): Map<string, number> {
+export function unseenCounts(s: GameState, seat: Seat): Map<string, number> {
   const counts = new Map<string, number>();
   const dec = (c: Card) => counts.set(identityKey(c), (counts.get(identityKey(c)) ?? s.config.decks) - 1);
   // 先把所有身份初始化为 3
@@ -81,7 +81,7 @@ function beatable(comp: Component, group: Group, unseen: Map<string, number>, ct
 }
 
 /** 谁在哪个组已经断门：跟牌时出了别的组的牌，就说明没有该组的牌了。 */
-function knownVoids(s: GameState): Map<Seat, Set<Group>> {
+export function knownVoids(s: GameState): Map<Seat, Set<Group>> {
   const out = new Map<Seat, Set<Group>>();
   const ctx = ctxOf(s);
   const scan = (leader: Seat, plays: readonly TrickPlay[], lead: { group: Group } | null) => {
@@ -116,13 +116,13 @@ function unseenTrumps(unseen: Map<string, number>, ctx: TrumpCtx): number {
 
 // ---------- 阵营 ----------
 
-interface Sides {
+export interface Sides {
   /** 我这边的人，含自己 */
   mates: Set<Seat>;
   likelyDealerSide: boolean;
 }
 
-function sidesOf(s: GameState, seat: Seat): Sides {
+export function sidesOf(s: GameState, seat: Seat): Sides {
   const team = dealerTeam(s);
   const hand = s.hands[seat] ?? [];
   const holdsFriendCard = s.friendCalls.some((c) => c.resolvedSeat === null && hand.some((h) => h.suit === c.suit && h.rank === c.rank));
@@ -504,7 +504,14 @@ function evaluateFollow(s: GameState, seat: Seat, sides: Sides, cards: Card[], f
   return score;
 }
 
-export function smartPlay(s: GameState, seat: Seat, rng: Rng, level: SmartLevel = 2): Action {
+export interface PlayCandidate {
+  readonly cards: Card[];
+  /** 规则打分，越高越好；搜索用它做候选排序与平局裁决 */
+  readonly heuristic: number;
+}
+
+/** 当前轮到 seat 出牌时的候选出法，按规则打分降序。首出与跟牌都覆盖。 */
+export function candidatePlays(s: GameState, seat: Seat, rng: Rng, level: SmartLevel = 2): PlayCandidate[] {
   const f = featuresOf(level);
   const hand = s.hands[seat] ?? [];
   const ctx = ctxOf(s);
@@ -513,11 +520,10 @@ export function smartPlay(s: GameState, seat: Seat, rng: Rng, level: SmartLevel 
 
   if (!trick || trick.plays.length === 0 || !trick.lead) {
     const unseen = unseenCounts(s, seat);
-    const cands = leadCandidates(s, seat, sides, unseen, f);
-    cands.sort((a, b) => b.score - a.score);
-    const best = cands[0];
-    if (!best) return { type: 'play', seat, cards: [hand[0]!.id] };
-    return { type: 'play', seat, cards: best.cards.map((c) => c.id) };
+    const cands = leadCandidates(s, seat, sides, unseen, f).map((c) => ({ cards: c.cards, heuristic: c.score }));
+    cands.sort((a, b) => b.heuristic - a.heuristic);
+    if (cands.length === 0 && hand[0]) cands.push({ cards: [hand[0]], heuristic: 0 });
+    return cands;
   }
 
   const lead = trick.lead;
@@ -527,21 +533,22 @@ export function smartPlay(s: GameState, seat: Seat, rng: Rng, level: SmartLevel 
     generateFollowWith(lead, hand, ctx, pointsChooser(ctx)),
     ...ruffCandidates(s, seat),
   ];
-  // 首出是对子时，自愿拆三条出对子也是一种选择
   if (lead.components.length === 1 && lead.components[0]?.kind === 'pair') {
     const mine = poolOf(hand.filter((c) => groupOf(c, ctx) === lead.group), ctx);
     for (const id of mine.values()) if (id.cards.length >= 3) raw.push(id.cards.slice(0, 2));
   }
   for (let i = 0; i < 20; i++) raw.push(generateFollow(lead, hand, ctx, rng));
-  const cands = dedupe(raw).filter((c) => validateFollow(lead, hand, c, ctx) === null);
+  const legal = dedupe(raw).filter((c) => validateFollow(lead, hand, c, ctx) === null);
   const unseen = f.follow ? unseenCounts(s, seat) : null;
-  let best = cands[0] ?? generateFollow(lead, hand, ctx, rng);
-  let bestScore = -Infinity;
-  for (const c of cands) {
-    const sc = evaluateFollow(s, seat, sides, c, f, unseen);
-    if (sc > bestScore) { bestScore = sc; best = c; }
-  }
-  return { type: 'play', seat, cards: best.map((c) => c.id) };
+  const cands = legal.map((c) => ({ cards: c, heuristic: evaluateFollow(s, seat, sides, c, f, unseen) }));
+  cands.sort((a, b) => b.heuristic - a.heuristic);
+  if (cands.length === 0) cands.push({ cards: generateFollow(lead, hand, ctx, rng), heuristic: 0 });
+  return cands;
+}
+
+export function smartPlay(s: GameState, seat: Seat, rng: Rng, level: SmartLevel = 2): Action {
+  const best = candidatePlays(s, seat, rng, level)[0] as PlayCandidate;
+  return { type: 'play', seat, cards: best.cards.map((c) => c.id) };
 }
 
 export function smartAction(s: GameState, seat: Seat, rng: Rng, level: SmartLevel = 2): Action | null {

@@ -1,6 +1,7 @@
 /** 用随机机器人跑完整局，检查不变量，收集统计。 */
 import { botAction, botDeclare, defaultBotOptions, type BotOptions } from '../bot.ts';
 import { SMART_V2, smartAction, smartDeclare, type SmartFeatures } from '../smartbot.ts';
+import { defaultSearchOptions, searchAction, type SearchOptions } from '../searchbot.ts';
 import { sumPoints } from '../cards.ts';
 import { decompose } from '../combos.ts';
 import type { GameConfig } from '../config.ts';
@@ -43,6 +44,9 @@ export interface SimOptions {
   readonly smartFeatures?: SmartFeatures;
   /** 哪些座位用第一版策略机器人，其余用随机机器人 */
   readonly basicSeats?: readonly number[];
+  /** 哪些座位用第三版搜索机器人 */
+  readonly strongSeats?: readonly number[];
+  readonly search?: SearchOptions;
   readonly onEvent?: (e: GameEvent, s: GameState) => void;
 }
 
@@ -109,11 +113,15 @@ export function simulateGame(config: GameConfig, seed: string, opts: SimOptions 
   };
   const smart = new Set(opts.smartSeats ?? []);
   const basic = new Set(opts.basicSeats ?? []);
+  const strong = new Set(opts.strongSeats ?? []);
+  const search = opts.search ?? defaultSearchOptions;
   const feats = opts.smartFeatures ?? SMART_V2;
   const declareFor = (st: GameState, seat: number) =>
-    smart.has(seat) ? smartDeclare(st, seat, rng, feats) : basic.has(seat) ? smartDeclare(st, seat, rng, 1) : botDeclare(st, seat, rng, bot);
+    smart.has(seat) || strong.has(seat) ? smartDeclare(st, seat, rng, feats) : basic.has(seat) ? smartDeclare(st, seat, rng, 1) : botDeclare(st, seat, rng, bot);
   const actionFor = (st: GameState, seat: number) =>
-    smart.has(seat) ? smartAction(st, seat, rng, feats) : basic.has(seat) ? smartAction(st, seat, rng, 1) : botAction(st, seat, rng, bot);
+    strong.has(seat) ? searchAction(st, seat, rng, search)
+      : smart.has(seat) ? smartAction(st, seat, rng, feats)
+        : basic.has(seat) ? smartAction(st, seat, rng, 1) : botAction(st, seat, rng, bot);
   let s = createGame(config, seed);
   let guard = 0;
   while (s.phase !== 'gameOver') {

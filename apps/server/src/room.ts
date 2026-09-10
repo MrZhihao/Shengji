@@ -1,6 +1,6 @@
 /** 一个房间：大厅座位管理 + 驾驭引擎状态机 + 机器人 + 广播。 */
 import {
-  applyAction, createGame, createRng, currentTurn, defaultConfig, restartRound, smartAction, smartDeclare, viewFor,
+  applyAction, createGame, createRng, currentTurn, defaultConfig, restartRound, searchPlayAsync, smartAction, smartDeclare, viewFor,
   type Action, type GameConfig, type GameEvent, type GameState, type Rng, type Seat,
 } from '@shengji/engine';
 import type { RoomInfo, RoomSummary, RoundReplay, ServerMessage } from '@shengji/protocol';
@@ -22,9 +22,11 @@ export interface RoomOptions {
   readonly dealIntervalMs: number;
   readonly declareGraceMs: number;
   readonly botDelayMs: number;
+  /** 搜索机器人每手的时间预算 */
+  readonly searchBudgetMs: number;
 }
 
-export const defaultRoomOptions: RoomOptions = { dealIntervalMs: 150, declareGraceMs: 5000, botDelayMs: 900 };
+export const defaultRoomOptions: RoomOptions = { dealIntervalMs: 150, declareGraceMs: 5000, botDelayMs: 900, searchBudgetMs: 900 };
 
 export class Room {
   readonly code: string;
@@ -37,6 +39,9 @@ export class Room {
   lastActivity = Date.now();
   /** 最近几局的操作日志，用于回放 */
   roundLogs: RoundReplay[] = [];
+  botStrength: 'normal' | 'strong' = 'strong';
+  /** 正在进行的异步搜索的序号，用来丢弃过期结果 */
+  private searchEpoch = 0;
   private readonly rng: Rng;
   private dealTimer: NodeJS.Timeout | null = null;
   private graceTimer: NodeJS.Timeout | null = null;
@@ -65,6 +70,7 @@ export class Room {
       seq: this.seq,
       lastActivity: this.lastActivity,
       roundLogs: this.roundLogs,
+      botStrength: this.botStrength,
     };
   }
 
@@ -76,6 +82,7 @@ export class Room {
     room.seq = snap.seq;
     room.lastActivity = snap.lastActivity;
     room.roundLogs = [...(snap.roundLogs ?? [])];
+    room.botStrength = snap.botStrength ?? 'strong';
     return room;
   }
 
@@ -126,9 +133,16 @@ export class Room {
         };
       }),
       started: this.started,
+      botStrength: this.botStrength,
       you: this.seatOf(forToken),
       youAreHost: forToken === this.hostToken,
     };
+  }
+
+  setBots(token: string, strength: 'normal' | 'strong'): void {
+    if (token !== this.hostToken) return this.error(token, 'NOT_HOST', '只有房主能设置机器人');
+    this.botStrength = strength;
+    this.broadcastRoom();
   }
 
   /** 房主可以关，没有真人在线的房间谁都可以关 */
@@ -389,6 +403,7 @@ export class Room {
   }
 
   private afterChange(events: readonly GameEvent[]): void {
+    this.searchEpoch++;
     this.broadcastState(events);
     this.onChange();
     this.armTimers();
@@ -464,9 +479,26 @@ export class Room {
       if (!this.state || !this.humansOnline()) return;
       const t = currentTurn(this.state);
       if (t === null || !this.seats[t]?.isBot) return;
+      if (this.botStrength === 'strong' && this.state.phase === 'playing') {
+        void this.searchAndPlay(t);
+        return;
+      }
       const a = smartAction(this.state, t, this.rng);
       if (a) this.apply(a);
     }, this.opts.botDelayMs);
+  }
+
+  /** 搜索机器人出牌：异步跑，期间局面若变了（重发、结束、有人接管）就丢弃结果 */
+  private async searchAndPlay(seat: Seat): Promise<void> {
+    const state = this.state;
+    if (!state) return;
+    const epoch = ++this.searchEpoch;
+    const r = await searchPlayAsync(state, seat, this.rng, {
+      timeBudgetMs: this.opts.searchBudgetMs, minSamples: 2, maxSamples: 40, maxCandidates: 8,
+    });
+    if (epoch !== this.searchEpoch || this.state !== state) return;
+    if (!this.seats[seat]?.isBot || currentTurn(this.state) !== seat) return;
+    this.apply(r.action);
   }
 
   private clearTimer(which: 'deal' | 'grace'): void {
@@ -475,6 +507,7 @@ export class Room {
   }
 
   dispose(): void {
+    this.searchEpoch++;
     this.clearTimer('deal');
     this.clearTimer('grace');
     if (this.botTimer) { clearTimeout(this.botTimer); this.botTimer = null; }

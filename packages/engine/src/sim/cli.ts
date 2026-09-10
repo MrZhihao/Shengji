@@ -12,7 +12,8 @@ const players = Number(arg('players', '6')) as PlayerCount;
 const games = Number(arg('games', '100'));
 const seed = arg('seed', 'shengji');
 const verbose = process.argv.includes('--verbose');
-/** --smart all：全部二版策略；half：偶数座位策略、奇数随机；ab：偶数座位二版、奇数座位一版；none：全随机 */
+/** --smart all：全部二版策略；half：偶数座位策略、奇数随机；ab：偶数座位二版、奇数座位一版；strong：偶数座位三版搜索、奇数座位二版；none：全随机 */
+/** --budget 毫秒 / --samples N / --cands N：三版搜索的时间预算、最大采样数、候选数 */
 const smartMode = arg('smart', 'none');
 /** --features declare,call,lead,follow：二版机器人只开这些特性；默认全开 */
 const featureArg = arg('features', 'all');
@@ -40,6 +41,18 @@ const smartSeats = smartMode === 'all' ? allSeats
   : smartMode === 'half' || smartMode === 'ab' ? allSeats.filter((i) => i % 2 === 0)
   : [];
 const basicSeats = smartMode === 'ab' ? allSeats.filter((i) => i % 2 === 1) : [];
+const strongSeats = smartMode === 'strong' ? allSeats.filter((i) => i % 2 === 0) : [];
+const search = {
+  timeBudgetMs: Number(arg('budget', '600')),
+  minSamples: 2,
+  maxSamples: Number(arg('samples', '48')),
+  maxCandidates: Number(arg('cands', '10')),
+};
+if (smartMode === 'strong') {
+  // strong 模式下奇数座位用二版
+  smartSeats.length = 0;
+  smartSeats.push(...allSeats.filter((i) => i % 2 === 1));
+}
 const agg: SimStats = {
   rounds: 0, redeals: 0, bottomFlips: 0, dealerHeld: 0, throwsAttempted: 0, throwsFailed: 0,
   friendSlots: 0, friendsRevealed: 0, dealerSelfFriend: 0, levelsUpHistogram: {}, opponentPointsSum: 0,
@@ -58,6 +71,8 @@ for (let g = 0; g < games; g++) {
     st = simulateGame(config, gameSeed, verbose ? {
       smartSeats,
       basicSeats,
+      strongSeats,
+      search,
       smartFeatures,
       onEvent: (e) => {
         if (e.type === 'roundScored') {
@@ -65,7 +80,7 @@ for (let g = 0; g < games; g++) {
           console.log(`  第 ${r.round} 局 庄家 ${r.dealer} 阵营 [${r.dealerTeam.join(',')}] 闲家得 ${r.opponentPoints} → ${r.dealerHeld ? '守住' : '下庄'} 升 ${r.levelsUp}，等级 ${r.levelsAfter.join('/')}`);
         }
       },
-    } : { smartSeats, basicSeats, smartFeatures });
+    } : { smartSeats, basicSeats, strongSeats, search, smartFeatures });
   } catch (err) {
     console.error(`游戏 ${gameSeed} 出错：${(err as Error).message}`);
     process.exit(1);
@@ -94,8 +109,8 @@ console.log(`甩牌尝试：${agg.throwsAttempted}，失败：${agg.throwsFailed
 console.log(`朋友位：${agg.friendSlots}，揭晓：${agg.friendsRevealed}，庄家自占：${agg.dealerSelfFriend}`);
 const hist = Object.entries(agg.levelsUpHistogram).sort(([a], [b]) => a.localeCompare(b));
 console.log(`结算分布：${hist.map(([k, v]) => `${k}=${v}`).join('  ')}`);
-if (smartSeats.length > 0) {
-  const label = (i: number) => (smartSeats.includes(i) ? '策略二版' : basicSeats.includes(i) ? '策略一版' : '随机');
+if (smartSeats.length > 0 || strongSeats.length > 0) {
+  const label = (i: number) => (strongSeats.includes(i) ? '搜索三版' : smartSeats.includes(i) ? '策略二版' : basicSeats.includes(i) ? '策略一版' : '随机');
   console.log(`座位对比（${smartMode}${smartMode === 'ab' ? `，二版特性 ${featureArg}` : ''}）：`);
   const groups = new Map<string, number[]>();
   for (let i = 0; i < players; i++) {

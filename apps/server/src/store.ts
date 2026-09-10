@@ -14,6 +14,7 @@ export interface RoomSnapshot {
   readonly seq: number;
   readonly lastActivity: number;
   readonly roundLogs?: readonly RoundReplay[];
+  readonly botStrength?: 'normal' | 'strong';
 }
 
 export interface SessionSnapshot {

@@ -23,6 +23,7 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('addBot'), seat: z.number().int().min(0).max(5) }),
   z.object({ t: z.literal('removeBot'), seat: z.number().int().min(0).max(5) }),
   z.object({ t: z.literal('start') }),
+  z.object({ t: z.literal('setBots'), strength: z.enum(['normal', 'strong']) }),
   z.object({ t: z.literal('declare'), cards: cardIds }),
   z.object({ t: z.literal('exchangeBottom'), cards: cardIds }),
   z.object({ t: z.literal('callFriend'), calls: z.array(friendCallSchema).min(1).max(2) }),
@@ -57,6 +58,8 @@ export interface RoomInfo {
   readonly players: 5 | 6;
   readonly seats: readonly (RoomPlayer | null)[];
   readonly started: boolean;
+  /** 机器人强度：normal 规则机器人反应快；strong 搜索机器人更会打但每手多想一秒 */
+  readonly botStrength: 'normal' | 'strong';
   /** 自己的座位，未坐下为 null */
   readonly you: Seat | null;
   readonly youAreHost: boolean;

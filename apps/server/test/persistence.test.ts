@@ -30,7 +30,7 @@ function connect(port: number): Promise<{ ws: WebSocket; next: (t?: number) => P
 }
 
 it('重启后用同一 token 回到同一个房间，牌局继续', async () => {
-  const opts = { dealIntervalMs: 2, declareGraceMs: 20, botDelayMs: 5 };
+  const opts = { dealIntervalMs: 2, declareGraceMs: 20, botDelayMs: 5, searchBudgetMs: 5 };
   let server = await startServer({ port: 0, host: '127.0.0.1', serveStatic: false, snapshotDir: dir, roomOptions: opts });
   const c = await connect(server.port);
   c.send({ t: 'hello', name: '甲' });

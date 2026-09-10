@@ -14,3 +14,4 @@ export * from './reducer.ts';
 export * from './view.ts';
 export * from './bot.ts';
 export * from './smartbot.ts';
+export * from './searchbot.ts';

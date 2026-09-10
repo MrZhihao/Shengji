@@ -161,6 +161,7 @@ wss.on('connection', (ws: AliveSocket) => {
       case 'addBot': return r.addBot(token, msg.seat);
       case 'removeBot': return r.removeBot(token, msg.seat);
       case 'start': return r.start(token);
+      case 'setBots': return r.setBots(token, msg.strength);
       case 'nextRound': return r.act(token, { type: 'nextRound' });
       case 'restartRound': return r.restartRound(token);
       case 'abortGame': return r.abortGame(token);

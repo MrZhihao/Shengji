@@ -35,6 +35,14 @@ export function Lobby({ client }: { client: GameClient }) {
           </div>
         ))}
       </div>
+      <div className="panel bots-panel">
+        <div className="panel-title">机器人</div>
+        <div className="seg">
+          <button className={room.botStrength === 'normal' ? 'on' : ''} disabled={!room.youAreHost} onClick={() => client.send({ t: 'setBots', strength: 'normal' })}>普通 · 反应快</button>
+          <button className={room.botStrength === 'strong' ? 'on' : ''} disabled={!room.youAreHost} onClick={() => client.send({ t: 'setBots', strength: 'strong' })}>加强 · 会算牌</button>
+        </div>
+        <div className="hint">{room.botStrength === 'strong' ? '加强版每手会推演几十种可能的牌局再出牌，多等约一秒。' : '普通版按牌桌常识出牌，几乎不用等。'}{!room.youAreHost && ' 只有房主能改。'}</div>
+      </div>
       <div className="lobby-actions">
         {room.youAreHost ? (
           <button className="primary" disabled={!full} onClick={() => client.send({ t: 'start' })}>
