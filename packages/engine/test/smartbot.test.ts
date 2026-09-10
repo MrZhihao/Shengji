@@ -59,3 +59,47 @@ describe('搜索机器人', () => {
     expect(applied.ok).toBe(true);
   }, 60_000);
 });
+
+describe('残局精确求解', () => {
+  it('残局所有合法出法都能算出确定值', async () => {
+    const { legalMoves, exactValueAfterPlay } = await import('../src/endgame.ts');
+    const rng = createRng('endgame-unit');
+    let s = createGame(defaultConfig(5), 'endgame-unit');
+    const step = (a: Parameters<typeof applyAction>[1]) => { const r = applyAction(s, a); if (!r.ok) throw new Error(r.error.message); s = r.state; };
+    while (s.phase === 'dealing') { for (let i = 0; i < 5; i++) { const d = smartDeclare(s, i, rng); if (d) step(d); } step({ type: 'dealCard' }); }
+    step({ type: 'closeDeclaring' });
+    while (s.phase !== 'playing') { const a = smartAction(s, s.dealer!, rng); if (a) step(a); }
+    while (!(s.hands.every((h) => h.length <= 3) && (s.trick?.plays.length ?? 0) === 0)) { const t = currentTurn(s)!; step(smartAction(s, t, rng)!); }
+    const seat = currentTurn(s)!;
+    const moves = legalMoves(s, seat);
+    expect(moves.length).toBeGreaterThan(0);
+    for (const m of moves) {
+      const v = exactValueAfterPlay(s, seat, m, 500_000);
+      expect(v).not.toBeNull();
+      expect(Number.isFinite(v)).toBe(true);
+    }
+    const r = searchPlay(s, seat, rng, { timeBudgetMs: 0, minSamples: 2, maxSamples: 2, maxCandidates: 6 });
+    expect(applyAction(s, r.action).ok).toBe(true);
+  }, 120_000);
+
+  it('扣底与叫朋友的候选集合有效', async () => {
+    const { rankedBottomSets, rankedFriendCallSets } = await import('../src/smartbot.ts');
+    const rng = createRng('dealer-cands');
+    let s = createGame(defaultConfig(6), 'dealer-cands');
+    const step = (a: Parameters<typeof applyAction>[1]) => { const r = applyAction(s, a); if (!r.ok) throw new Error(r.error.message); s = r.state; };
+    while (s.phase === 'dealing') { for (let i = 0; i < 6; i++) { const d = smartDeclare(s, i, rng); if (d) step(d); } step({ type: 'dealCard' }); }
+    step({ type: 'closeDeclaring' });
+    const dealer = s.dealer!;
+    const bottoms = rankedBottomSets(s, dealer);
+    expect(bottoms.length).toBeGreaterThan(1);
+    for (const b of bottoms) {
+      expect(b.length).toBe(s.config.bottomSize);
+      expect(new Set(b.map((c) => c.id)).size).toBe(b.length);
+      expect(applyAction(s, { type: 'exchangeBottom', seat: dealer, cards: b.map((c) => c.id) }).ok).toBe(true);
+    }
+    step({ type: 'exchangeBottom', seat: dealer, cards: bottoms[0]!.map((c) => c.id) });
+    const calls = rankedFriendCallSets(s, dealer);
+    expect(calls.length).toBeGreaterThan(0);
+    for (const set of calls) expect(applyAction(s, { type: 'callFriend', seat: dealer, calls: set }).ok).toBe(true);
+  }, 60_000);
+});

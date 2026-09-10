@@ -237,6 +237,44 @@ function declareV2(s: GameState, seat: Seat, options: Card[][]): Action | null {
 
 // ---------- 扣底 ----------
 
+/** 扣底候选集合：第二版的首选，加上把末位几张分别换成下一张的变体 */
+export function rankedBottomSets(s: GameState, seat: Seat, maxSets = 6): Card[][] {
+  const ranked = rankBottomDiscards(s, seat);
+  const n = s.config.bottomSize;
+  const base = ranked.slice(0, n);
+  const sets: Card[][] = [base];
+  for (let swapOut = n - 1; swapOut >= Math.max(0, n - 3) && sets.length < maxSets; swapOut--) {
+    for (let swapIn = n; swapIn < Math.min(ranked.length, n + 3) && sets.length < maxSets; swapIn++) {
+      const v = [...base];
+      v[swapOut] = ranked[swapIn] as Card;
+      sets.push(v);
+    }
+  }
+  return sets;
+}
+
+function rankBottomDiscards(s: GameState, seat: Seat): Card[] {
+  const hand = s.hands[seat] ?? [];
+  const ctx = ctxOf(s);
+  const bySuit = new Map<Group, Card[]>();
+  for (const c of hand) bySuit.set(groupOf(c, ctx), [...(bySuit.get(groupOf(c, ctx)) ?? []), c]);
+  const pool = poolOf(hand, ctx);
+  const scored = hand.map((c) => {
+    const g = groupOf(c, ctx);
+    const suitLen = bySuit.get(g)?.length ?? 0;
+    const copies = pool.get(identityKey(c))?.cards.length ?? 1;
+    let score = 30 - ordinal(c, ctx);
+    if (g === 'T') score -= 40;
+    if (cardPoints(c) > 0) score -= 25;
+    if (g !== 'T') score += Math.max(0, 8 - suitLen) * 3;
+    if (copies >= 2) score -= 12;
+    if (c.rank === 14 && g !== 'T') score -= 15;
+    return { c, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map((x) => x.c);
+}
+
 export function smartExchangeBottom(s: GameState, seat: Seat, _rng: Rng): Action {
   const hand = s.hands[seat] ?? [];
   const ctx = ctxOf(s);
@@ -302,6 +340,47 @@ function callFriendV1(s: GameState, seat: Seat): Action {
  * 叫朋友第二版：只叫自己手里和底牌里都没有的牌，序号一律「第一张」，谁先打出谁就是朋友，不会被自己的牌搅乱；
  * 优先缺门或短门的 A，朋友的 A 能赢墩，自己还能毙；两个朋友尽量不同花色，让更多人有机会成为朋友。
  */
+/** 叫朋友的候选集合，按第二版打分从高到低，最多 maxSets 组，供搜索机器人逐一推演 */
+export function rankedFriendCallSets(s: GameState, seat: Seat, maxSets = 6): FriendCallSpec[][] {
+  const hand = s.hands[seat] ?? [];
+  const bottom = s.bottom;
+  const count = (cards: readonly Card[], suit: Suit, rank: number) => cards.filter((c) => c.suit === suit && c.rank === rank).length;
+  const cands: { call: FriendCallSpec; score: number }[] = [];
+  for (const suit of SUITS) {
+    if (suit === s.trumpSuit) continue;
+    const suitLen = hand.filter((c) => c.suit === suit).length;
+    for (const rank of [14, 13, 12, 11]) {
+      if (rank === s.level) continue;
+      const mine = count(hand, suit, rank);
+      const buried = count(bottom, suit, rank);
+      const outside = s.config.decks - mine - buried;
+      if (outside <= 0) continue;
+      let score = rank === 14 ? 40 : rank === 13 ? 20 : rank === 12 ? 8 : 2;
+      score -= suitLen * 3;
+      score -= mine * 12;
+      cands.push({ call: { suit, rank, nth: Math.min(s.config.decks, mine + 1) }, score });
+      if (outside >= 2 && mine === 0) cands.push({ call: { suit, rank, nth: 2 }, score: score - 14 });
+    }
+  }
+  cands.sort((a, b) => b.score - a.score);
+  const top = cands.slice(0, 6).map((c) => c.call);
+  const key = (c: FriendCallSpec) => `${c.suit}${c.rank}#${c.nth}`;
+  const sets: FriendCallSpec[][] = [];
+  const k = s.config.friendCount;
+  const rec = (start: number, acc: FriendCallSpec[]) => {
+    if (acc.length === k) { sets.push([...acc]); return; }
+    for (let i = start; i < top.length; i++) {
+      if (acc.some((x) => key(x) === key(top[i] as FriendCallSpec))) continue;
+      acc.push(top[i] as FriendCallSpec); rec(i + 1, acc); acc.pop();
+    }
+  };
+  rec(0, []);
+  // 不同花色优先排前面
+  sets.sort((a, b) => new Set(b.map((x) => x.suit)).size - new Set(a.map((x) => x.suit)).size);
+  if (sets.length === 0) sets.push((callFriendV2(s, seat) as Extract<Action, { type: 'callFriend' }>).calls as FriendCallSpec[]);
+  return sets.slice(0, maxSets);
+}
+
 function callFriendV2(s: GameState, seat: Seat): Action {
   const hand = s.hands[seat] ?? [];
   const bottom = s.bottom;

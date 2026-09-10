@@ -7,9 +7,11 @@
 import { makeDeck, type Card } from './cards.ts';
 import { applyAction, ctxOf, currentTurn } from './reducer.ts';
 import { createRng, type Rng } from './rng.ts';
-import { candidatePlays, knownVoids, smartAction, type PlayCandidate } from './smartbot.ts';
+import { candidatePlays, knownVoids, rankedBottomSets, rankedFriendCallSets, smartAction, type PlayCandidate } from './smartbot.ts';
+import type { FriendCallSpec } from './state.ts';
 import type { Action, GameState, Seat } from './state.ts';
 import { groupOf, type Group } from './trump.ts';
+import { EXACT_MAX_CARDS, exactValueAfterPlay, terminalUtility } from './endgame.ts';
 
 // 引擎不依赖 DOM 或 Node 类型，这里只声明用到的两个全局
 declare const setTimeout: (fn: () => void, ms: number) => unknown;
@@ -95,13 +97,14 @@ export function sampleDeterminization(s: GameState, seat: Seat, rng: Rng): Deter
         eligible.push(i);
         total += cap[i]!;
       }
-      if (bcap > 0) { eligible.push(-1); total += bcap; }
+      let bottomWeight = 0;
+      if (bcap > 0) { eligible.push(-1); bottomWeight = bcap * bottomBias(c, g); total += bottomWeight; }
       if (eligible.length === 0) return null;
-      // 按剩余容量加权随机
+      // 按剩余容量加权随机；底牌按「庄家会不会扣这张」再加权
       let r = rng.next() * total;
       let chosen = eligible[eligible.length - 1] as number;
       for (const i of eligible) {
-        const w = i === -1 ? bcap : cap[i]!;
+        const w = i === -1 ? bottomWeight : cap[i]!;
         if (r < w) { chosen = i; break; }
         r -= w;
       }
@@ -118,6 +121,15 @@ export function sampleDeterminization(s: GameState, seat: Seat, rng: Rng): Deter
   return attempt(false) as Determinization;
 }
 
+/** 庄家扣底偏好：主牌几乎不扣，分牌很少扣，副牌小牌最常扣 */
+function bottomBias(c: Card, g: Group): number {
+  if (g === 'T') return 0.15;
+  const pts = c.rank === 5 || c.rank === 10 || c.rank === 13;
+  if (pts) return 0.35;
+  if (c.rank >= 12) return 0.5;
+  return 2.2;
+}
+
 function voidCount(voids: Map<Seat, Set<Group>>, g: Group, n: number, me: Seat): number {
   let k = 0;
   for (let i = 0; i < n; i++) if (i !== me && voids.get(i)?.has(g)) k++;
@@ -129,6 +141,11 @@ function voidCount(voids: Map<Seat, Set<Group>>, g: Group, n: number, me: Seat):
 /** 从 seat 出 cards 开始，用策略机器人把这局打完，返回从 seat 角度看的收益（单位：一级） */
 function rollout(base: GameState, seat: Seat, cards: Card[], det: Determinization, rng: Rng): number | null {
   let s: GameState = { ...base, hands: det.hands, bottom: det.bottom };
+  // 残局：能精确算就精确算
+  if ((s.hands[seat]?.length ?? 0) <= EXACT_MAX_CARDS) {
+    const exact = exactValueAfterPlay(s, seat, cards);
+    if (exact !== null) return exact;
+  }
   const first = applyAction(s, { type: 'play', seat, cards: cards.map((c) => c.id) });
   if (!first.ok) return null;
   s = first.state;
@@ -145,13 +162,7 @@ function rollout(base: GameState, seat: Seat, cards: Card[], det: Determinizatio
   }
   const res = s.lastRound;
   if (!res) return null;
-  const L = s.config.levelStep;
-  const onDealerSide = res.dealerTeam.includes(seat);
-  const side = onDealerSide ? -1 : 1;
-  // 闲家分相对下庄线的位置，加上升级数的方向
-  const swing = (res.opponentPoints - 2 * L) / L;
-  const levels = res.dealerHeld ? -res.levelsUp : res.levelsUp;
-  return side * swing + side * levels * 0.5;
+  return terminalUtility(res, seat, s.config.levelStep);
 }
 
 // ---------- 搜索 ----------
@@ -160,6 +171,8 @@ interface SearchState {
   readonly cands: PlayCandidate[];
   readonly sums: number[];
   readonly counts: number[];
+  /** 仍在比较中的候选下标 */
+  alive: number[];
   samples: number;
   readonly t0: number;
 }
@@ -167,20 +180,29 @@ interface SearchState {
 function beginSearch(s: GameState, seat: Seat, rng: Rng, opts: SearchOptions): SearchState {
   const all = candidatePlays(s, seat, rng, 2);
   const cands = all.slice(0, Math.max(1, opts.maxCandidates));
-  return { cands, sums: new Array<number>(cands.length).fill(0), counts: new Array<number>(cands.length).fill(0), samples: 0, t0: now() };
+  return { cands, sums: new Array<number>(cands.length).fill(0), counts: new Array<number>(cands.length).fill(0), alive: cands.map((_, i) => i), samples: 0, t0: now() };
 }
 
 /** 跑一次采样：同一采样、同一推演随机序列，所有候选公平比较 */
 function searchStep(s: GameState, seat: Seat, rng: Rng, st: SearchState): void {
   const det = sampleDeterminization(s, seat, rng);
   const seed = `${rng.next()}`;
-  for (let i = 0; i < st.cands.length; i++) {
+  for (const i of st.alive) {
     const u = rollout(s, seat, (st.cands[i] as PlayCandidate).cards, det, createRng(seed));
     if (u === null) continue;
     st.sums[i]! += u;
     st.counts[i]! += 1;
   }
   st.samples++;
+  prune(st);
+}
+
+/** 逐轮淘汰：采样到 4、8、14 次时分别只保留前 5、3、2 名，后面的预算全给它们 */
+function prune(st: SearchState): void {
+  const keep = st.samples >= 14 ? 2 : st.samples >= 8 ? 3 : st.samples >= 4 ? 5 : Infinity;
+  if (st.alive.length <= keep) return;
+  const mean = (i: number) => (st.counts[i]! > 0 ? st.sums[i]! / st.counts[i]! : -Infinity);
+  st.alive = [...st.alive].sort((a, b) => mean(b) - mean(a) || (st.cands[b] as PlayCandidate).heuristic - (st.cands[a] as PlayCandidate).heuristic).slice(0, keep);
 }
 
 function shouldContinue(st: SearchState, opts: SearchOptions): boolean {
@@ -192,8 +214,8 @@ function shouldContinue(st: SearchState, opts: SearchOptions): boolean {
 function finishSearch(seat: Seat, st: SearchState): SearchResult {
   const { cands, sums, counts } = st;
   const means = cands.map((_, i) => (counts[i]! > 0 ? sums[i]! / counts[i]! : -Infinity));
-  let best = 0;
-  for (let i = 1; i < cands.length; i++) {
+  let best = st.alive[0] ?? 0;
+  for (const i of st.alive) {
     const a = means[i]!, b = means[best]!;
     if (a > b + 1e-9 || (Math.abs(a - b) <= 1e-9 && (cands[i] as PlayCandidate).heuristic > (cands[best] as PlayCandidate).heuristic)) best = i;
   }
@@ -228,6 +250,77 @@ export async function searchPlayAsync(s: GameState, seat: Seat, rng: Rng, opts: 
     }
   }
   return finishSearch(seat, st);
+}
+
+// ---------- 庄家决策：扣底与叫朋友也用推演 ----------
+
+/** 从任意阶段把这局用二版机器人打到结束，返回 seat 角度收益 */
+function playoutFrom(start: GameState, seat: Seat, rng: Rng): number | null {
+  let s = start;
+  let guard = 0;
+  while (s.phase !== 'roundEnd' && s.phase !== 'gameOver') {
+    if (++guard > 500) return null;
+    const actor = s.phase === 'playing' ? currentTurn(s) : s.dealer;
+    if (actor === null) return null;
+    const a = smartAction(s, actor, rng, 2);
+    if (!a) return null;
+    const r = applyAction(s, a);
+    if (!r.ok) return null;
+    s = r.state;
+  }
+  return s.lastRound ? terminalUtility(s.lastRound, seat, s.config.levelStep) : null;
+}
+
+/** 对一组「候选动作」做同样的采样推演比较，返回最好的一个 */
+async function compareActions(
+  s: GameState, seat: Seat, rng: Rng, opts: SearchOptions, actions: Action[], yieldBetween: boolean,
+): Promise<{ index: number; samples: number; means: number[] }> {
+  const sums = new Array<number>(actions.length).fill(0);
+  const counts = new Array<number>(actions.length).fill(0);
+  let alive = actions.map((_, i) => i);
+  let samples = 0;
+  const t0 = now();
+  while (samples < opts.maxSamples && (samples < opts.minSamples || now() - t0 <= opts.timeBudgetMs)) {
+    const det = sampleDeterminization(s, seat, rng);
+    const base: GameState = { ...s, hands: det.hands, bottom: det.bottom };
+    const seed = `${rng.next()}`;
+    for (const i of alive) {
+      const r = applyAction(base, actions[i] as Action);
+      if (!r.ok) continue;
+      const u = playoutFrom(r.state, seat, createRng(seed));
+      if (u === null) continue;
+      sums[i]! += u; counts[i]! += 1;
+    }
+    samples++;
+    const keep = samples >= 12 ? 2 : samples >= 6 ? 3 : Infinity;
+    if (alive.length > keep) {
+      const mean = (i: number) => (counts[i]! > 0 ? sums[i]! / counts[i]! : -Infinity);
+      alive = [...alive].sort((a, b) => mean(b) - mean(a)).slice(0, keep);
+    }
+    if (yieldBetween) await new Promise<void>((r) => setTimeout(r, 0));
+  }
+  const means = actions.map((_, i) => (counts[i]! > 0 ? sums[i]! / counts[i]! : -Infinity));
+  let best = alive[0] ?? 0;
+  for (const i of alive) if (means[i]! > means[best]!) best = i;
+  return { index: best, samples, means };
+}
+
+/** 扣底：在第二版首选的基础上比较几组变体 */
+export async function searchExchangeBottomAsync(s: GameState, seat: Seat, rng: Rng, opts: SearchOptions, yieldBetween = true): Promise<Action> {
+  const sets = rankedBottomSets(s, seat, 6);
+  const actions: Action[] = sets.map((cards) => ({ type: 'exchangeBottom', seat, cards: cards.map((c) => c.id) }));
+  if (actions.length === 1) return actions[0] as Action;
+  const r = await compareActions(s, seat, rng, opts, actions, yieldBetween);
+  return actions[r.index] as Action;
+}
+
+/** 叫朋友：比较几组候选叫法 */
+export async function searchCallFriendAsync(s: GameState, seat: Seat, rng: Rng, opts: SearchOptions, yieldBetween = true): Promise<Action> {
+  const sets: FriendCallSpec[][] = rankedFriendCallSets(s, seat, 6);
+  const actions: Action[] = sets.map((calls) => ({ type: 'callFriend', seat, calls }));
+  if (actions.length === 1) return actions[0] as Action;
+  const r = await compareActions(s, seat, rng, opts, actions, yieldBetween);
+  return actions[r.index] as Action;
 }
 
 /** 第三版机器人：出牌用搜索，其余沿用第二版 */

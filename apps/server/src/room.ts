@@ -1,6 +1,6 @@
 /** 一个房间：大厅座位管理 + 驾驭引擎状态机 + 机器人 + 广播。 */
 import {
-  applyAction, createGame, createRng, currentTurn, defaultConfig, restartRound, searchPlayAsync, smartAction, smartDeclare, viewFor,
+  applyAction, createGame, createRng, currentTurn, defaultConfig, restartRound, searchCallFriendAsync, searchExchangeBottomAsync, searchPlayAsync, smartAction, smartDeclare, viewFor,
   type Action, type GameConfig, type GameEvent, type GameState, type Rng, type Seat,
 } from '@shengji/engine';
 import type { RoomInfo, RoomSummary, RoundReplay, ServerMessage } from '@shengji/protocol';
@@ -475,14 +475,14 @@ export class Room {
     const turn = currentTurn(this.state);
     if (turn === null || !this.seats[turn]?.isBot) return;
     // 加强模式下搜索本身就是思考时间，固定等待缩短
-    const searching = this.botStrength === 'strong' && this.state.phase === 'playing';
+    const searching = this.botStrength === 'strong' && (this.state.phase === 'playing' || this.state.phase === 'bottom' || this.state.phase === 'callFriend');
     const delay = searching ? Math.min(this.opts.botDelayMs, 300) : this.opts.botDelayMs;
     this.botTimer = setTimeout(() => {
       this.botTimer = null;
       if (!this.state || !this.humansOnline()) return;
       const t = currentTurn(this.state);
       if (t === null || !this.seats[t]?.isBot) return;
-      if (this.botStrength === 'strong' && this.state.phase === 'playing') {
+      if (this.botStrength === 'strong' && (this.state.phase === 'playing' || this.state.phase === 'bottom' || this.state.phase === 'callFriend')) {
         void this.searchAndPlay(t);
         return;
       }
@@ -496,12 +496,21 @@ export class Room {
     const state = this.state;
     if (!state) return;
     const epoch = ++this.searchEpoch;
-    const r = await searchPlayAsync(state, seat, this.rng, {
-      timeBudgetMs: this.opts.searchBudgetMs, minSamples: 2, maxSamples: 40, maxCandidates: 8,
-    });
+    const opts = { timeBudgetMs: this.opts.searchBudgetMs, minSamples: 2, maxSamples: 40, maxCandidates: 8 };
+    let action: Action;
+    if (state.phase === 'bottom') {
+      // 扣底、叫朋友一局只做一次，预算给多一点
+      action = await searchExchangeBottomAsync(state, seat, this.rng, { ...opts, timeBudgetMs: opts.timeBudgetMs * 2, maxSamples: 24 });
+    } else if (state.phase === 'callFriend') {
+      action = await searchCallFriendAsync(state, seat, this.rng, { ...opts, timeBudgetMs: opts.timeBudgetMs * 2, maxSamples: 24 });
+    } else {
+      const r = await searchPlayAsync(state, seat, this.rng, opts);
+      console.log(`[${this.code}] 搜索 座位${seat} 候选${r.candidates} 采样${r.samples} ${Math.round(r.elapsedMs)}ms`);
+      action = r.action;
+    }
     if (epoch !== this.searchEpoch || this.state !== state) return;
     if (!this.seats[seat]?.isBot || currentTurn(this.state) !== seat) return;
-    this.apply(r.action);
+    this.apply(action);
   }
 
   private clearTimer(which: 'deal' | 'grace'): void {
