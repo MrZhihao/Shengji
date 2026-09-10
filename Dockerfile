@@ -12,10 +12,10 @@ COPY . .
 RUN pnpm --filter @shengji/web build
 
 FROM node:22-alpine AS runtime
-RUN corepack enable && corepack prepare pnpm@12 --activate
 WORKDIR /app
 ENV NODE_ENV=production PORT=3000 SNAPSHOT_DIR=/data
 COPY --from=build /app /app
 EXPOSE 3000
 VOLUME ["/data"]
-CMD ["pnpm", "--filter", "@shengji/server", "start"]
+# 直接用 tsx 启动，避免每次冷启动都去下载 pnpm
+CMD ["node_modules/.bin/tsx", "apps/server/src/index.ts"]

@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { GameEvent, PlayerView } from '@shengji/engine';
 import type { ClientMessage, RoomInfo, RoundReplay, ServerMessage } from '@shengji/protocol';
+import { checkForUpdate } from './pwa.ts';
 
 export interface Toast {
   readonly id: number;
@@ -69,7 +70,7 @@ export function useGameClient(): GameClient {
       ws.onmessage = (ev) => {
         const msg = JSON.parse(String(ev.data)) as ServerMessage;
         switch (msg.t) {
-          case 'welcome': localStorage.setItem(TOKEN_KEY, msg.token); break;
+          case 'welcome': localStorage.setItem(TOKEN_KEY, msg.token); void checkForUpdate(); break;
           case 'room':
             if (localStorage.getItem(PENDING_LEAVE_KEY)) {
               // 退出还没被服务端确认前，忽略把我们拉回房间的消息

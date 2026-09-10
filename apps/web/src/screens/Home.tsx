@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { GameClient } from '../ws.ts';
+import { buildTime } from '../pwa.ts';
 
 export function Home({ client }: { client: GameClient }) {
   const [name, setName] = useState(client.name);
@@ -39,6 +40,7 @@ export function Home({ client }: { client: GameClient }) {
           </button>
         </div>
       </div>
+      <div className="build">版本 {buildTime}</div>
     </div>
   );
 }
