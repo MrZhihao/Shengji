@@ -9,6 +9,7 @@ import { parseClientMessage, type ServerMessage } from '@shengji/protocol';
 import { Registry } from './registry.ts';
 import type { RoomOptions } from './room.ts';
 import { Store } from './store.ts';
+import { closeSearchPool, getSearchPool } from './searchPool.ts';
 
 export interface ServerOptions {
   readonly port: number;
@@ -40,6 +41,7 @@ const store = options.snapshotDir ? new Store(options.snapshotDir) : null;
 const registry = new Registry(options.roomOptions, store);
 const restored = registry.restore();
 if (restored > 0) console.log(`从快照恢复了 ${restored} 个房间`);
+getSearchPool();
 const gcTimer = setInterval(() => registry.gc(), 10 * 60_000);
 gcTimer.unref();
 
@@ -201,6 +203,7 @@ return {
     clearInterval(gcTimer);
     clearInterval(heartbeat);
     registry.flush();
+    await closeSearchPool();
     for (const r of registry.rooms.values()) r.dispose();
     for (const c of wss.clients) c.terminate();
     wss.close();

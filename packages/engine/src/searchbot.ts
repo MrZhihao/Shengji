@@ -165,6 +165,88 @@ function rollout(base: GameState, seat: Seat, cards: Card[], det: Determinizatio
   return terminalUtility(res, seat, s.config.levelStep);
 }
 
+// ---------- 批量采样：可在任意线程运行的纯函数 ----------
+
+/** 评估「seat 在确定化局面上执行 action」的收益：出牌残局走精确求解，其余用二版机器人打完 */
+export function evaluateAction(base: GameState, seat: Seat, action: Action, det: Determinization, rng: Rng): number | null {
+  const s: GameState = { ...base, hands: det.hands, bottom: det.bottom };
+  if (action.type === 'play' && (s.hands[seat]?.length ?? 0) <= EXACT_MAX_CARDS) {
+    const cards = (s.hands[seat] ?? []).filter((c) => action.cards.includes(c.id));
+    const exact = exactValueAfterPlay(s, seat, cards);
+    if (exact !== null) return exact;
+  }
+  const r = applyAction(s, action);
+  if (!r.ok) return null;
+  return playoutFrom(r.state, seat, rng);
+}
+
+export interface SearchBatchJob {
+  readonly state: GameState;
+  readonly seat: Seat;
+  readonly actions: readonly Action[];
+  /** 仍在比较中的候选下标 */
+  readonly alive: readonly number[];
+  /** 每个种子对应一次采样 */
+  readonly seeds: readonly string[];
+}
+
+export interface SearchBatchResult {
+  readonly sums: number[];
+  readonly counts: number[];
+  readonly samples: number;
+}
+
+/** 跑一批采样：每个种子生成一份手牌补全，用同一推演随机序列评估所有存活候选 */
+export function runSearchBatch(job: SearchBatchJob): SearchBatchResult {
+  const sums = new Array<number>(job.actions.length).fill(0);
+  const counts = new Array<number>(job.actions.length).fill(0);
+  for (const seed of job.seeds) {
+    const rng = createRng(`det/${seed}`);
+    const det = sampleDeterminization(job.state, job.seat, rng);
+    for (const i of job.alive) {
+      const u = evaluateAction(job.state, job.seat, job.actions[i] as Action, det, createRng(`roll/${seed}`));
+      if (u === null) continue;
+      sums[i]! += u;
+      counts[i]! += 1;
+    }
+  }
+  return { sums, counts, samples: job.seeds.length };
+}
+
+/** 逐轮淘汰：采样到 4、8、14 次时分别只保留前 5、3、2 名 */
+export function pruneCandidates(alive: readonly number[], sums: readonly number[], counts: readonly number[], samples: number, tieBreak: readonly number[]): number[] {
+  const keep = samples >= 14 ? 2 : samples >= 8 ? 3 : samples >= 4 ? 5 : Infinity;
+  if (alive.length <= keep) return [...alive];
+  const mean = (i: number) => (counts[i]! > 0 ? sums[i]! / counts[i]! : -Infinity);
+  return [...alive].sort((a, b) => mean(b) - mean(a) || (tieBreak[b] ?? 0) - (tieBreak[a] ?? 0)).slice(0, keep);
+}
+
+export function chooseBest(alive: readonly number[], sums: readonly number[], counts: readonly number[], tieBreak: readonly number[]): number {
+  const mean = (i: number) => (counts[i]! > 0 ? sums[i]! / counts[i]! : -Infinity);
+  let best = alive[0] ?? 0;
+  for (const i of alive) {
+    const a = mean(i), b = mean(best);
+    if (a > b + 1e-9 || (Math.abs(a - b) <= 1e-9 && (tieBreak[i] ?? 0) > (tieBreak[best] ?? 0))) best = i;
+  }
+  return best;
+}
+
+/** 出牌搜索的候选动作与规则打分 */
+export function playCandidates(s: GameState, seat: Seat, rng: Rng, maxCandidates: number): { actions: Action[]; heuristics: number[] } {
+  const cands = candidatePlays(s, seat, rng, 2).slice(0, Math.max(1, maxCandidates));
+  return {
+    actions: cands.map((c) => ({ type: 'play', seat, cards: c.cards.map((x) => x.id) })),
+    heuristics: cands.map((c) => c.heuristic),
+  };
+}
+
+/** 扣底 / 叫朋友的候选动作 */
+export function dealerCandidates(s: GameState, seat: Seat): Action[] {
+  if (s.phase === 'bottom') return rankedBottomSets(s, seat, 6).map((cards) => ({ type: 'exchangeBottom', seat, cards: cards.map((c) => c.id) }));
+  if (s.phase === 'callFriend') return rankedFriendCallSets(s, seat, 6).map((calls) => ({ type: 'callFriend', seat, calls }));
+  return [];
+}
+
 // ---------- 搜索 ----------
 
 interface SearchState {

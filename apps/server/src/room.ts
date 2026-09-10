@@ -1,11 +1,12 @@
 /** 一个房间：大厅座位管理 + 驾驭引擎状态机 + 机器人 + 广播。 */
 import {
-  applyAction, createGame, createRng, currentTurn, defaultConfig, restartRound, searchCallFriendAsync, searchExchangeBottomAsync, searchPlayAsync, smartAction, smartDeclare, viewFor,
+  applyAction, createGame, createRng, currentTurn, defaultConfig, restartRound, smartAction, smartDeclare, viewFor,
   type Action, type GameConfig, type GameEvent, type GameState, type Rng, type Seat,
 } from '@shengji/engine';
 import type { RoomInfo, RoomSummary, RoundReplay, ServerMessage } from '@shengji/protocol';
 import type { WebSocket } from 'ws';
 import type { RoomSnapshot } from './store.ts';
+import { getSearchPool } from './searchPool.ts';
 
 export interface Member {
   readonly token: string;
@@ -496,16 +497,17 @@ export class Room {
     const state = this.state;
     if (!state) return;
     const epoch = ++this.searchEpoch;
-    const opts = { timeBudgetMs: this.opts.searchBudgetMs, minSamples: 2, maxSamples: 40, maxCandidates: 8 };
+    const pool = getSearchPool();
+    const opts = { timeBudgetMs: this.opts.searchBudgetMs, minSamples: 2, maxSamples: 120, maxCandidates: 8 };
     let action: Action;
-    if (state.phase === 'bottom') {
+    if (state.phase === 'bottom' || state.phase === 'callFriend') {
       // 扣底、叫朋友一局只做一次，预算给多一点
-      action = await searchExchangeBottomAsync(state, seat, this.rng, { ...opts, timeBudgetMs: opts.timeBudgetMs * 2, maxSamples: 24 });
-    } else if (state.phase === 'callFriend') {
-      action = await searchCallFriendAsync(state, seat, this.rng, { ...opts, timeBudgetMs: opts.timeBudgetMs * 2, maxSamples: 24 });
+      const r = await pool.searchDealer(state, seat, this.rng, { ...opts, timeBudgetMs: opts.timeBudgetMs * 2, maxSamples: 60 });
+      console.log(`[${this.code}] ${state.phase === 'bottom' ? '扣底' : '叫朋友'}搜索 座位${seat} 候选${r.candidates} 采样${r.samples} ${r.elapsedMs}ms ${r.workers}线程`);
+      action = r.action;
     } else {
-      const r = await searchPlayAsync(state, seat, this.rng, opts);
-      console.log(`[${this.code}] 搜索 座位${seat} 候选${r.candidates} 采样${r.samples} ${Math.round(r.elapsedMs)}ms`);
+      const r = await pool.searchPlay(state, seat, this.rng, opts);
+      console.log(`[${this.code}] 搜索 座位${seat} 候选${r.candidates} 采样${r.samples} ${r.elapsedMs}ms ${r.workers}线程`);
       action = r.action;
     }
     if (epoch !== this.searchEpoch || this.state !== state) return;

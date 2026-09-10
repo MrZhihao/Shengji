@@ -1,5 +1,5 @@
 # 多阶段构建：build 阶段装依赖并打包前端；运行镜像直接带走整棵已安装好的工作区，避免运行时再解析依赖。
-FROM node:22-alpine AS build
+FROM node:24-alpine AS build
 RUN corepack enable && corepack prepare pnpm@12 --activate
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
@@ -11,7 +11,7 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm --filter @shengji/web build
 
-FROM node:22-alpine AS runtime
+FROM node:24-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production PORT=3000 SNAPSHOT_DIR=/data
 COPY --from=build /app /app

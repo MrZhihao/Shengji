@@ -41,7 +41,7 @@ pnpm dev:web       # http://localhost:5173，会打印局域网地址，同一 W
 
 ## 部署到 Fly.io
 
-线上地址：https://shengji-zhaopengyou.fly.dev （Fly 应用名 `shengji-zhaopengyou`，纽瓦克 ewr 机房）。
+线上地址：https://shengji-zhaopengyou.fly.dev （Fly 应用名 `shengji-zhaopengyou`，纽瓦克 ewr 机房，shared-cpu-4x 1GB，空闲自动休眠）。
 
 仓库自带 `Dockerfile` 和 `fly.toml`（一台机器，空闲时自动休眠、有人访问自动唤醒，1GB 卷挂在 /data 存快照，休眠前后牌局靠快照恢复）。改完代码重新上线只需：
 

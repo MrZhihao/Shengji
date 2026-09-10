@@ -29,5 +29,6 @@ primary_region = "ewr"
   destination = "/data"
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "256mb"
+  # 搜索机器人在 worker 线程里并行采样，多核有用
+  size = "shared-cpu-4x"
+  memory = "1024mb"
