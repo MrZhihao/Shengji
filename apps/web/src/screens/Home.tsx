@@ -72,9 +72,14 @@ export function Home({ client }: { client: GameClient }) {
                 <span className="room-meta">{r.players} 人 · {phaseText(r)} · 房主 {r.hostName}</span>
                 <span className="room-names">{r.names.join('、')}{r.bots ? `${r.names.length ? '、' : ''}机器人×${r.bots}` : ''}{r.humansOnline < r.humans ? ` · ${r.humans - r.humansOnline} 人离线` : ''}</span>
               </div>
-              <button className="ghost small" disabled={!r.joinable} onClick={() => { ensureName(); setTimeout(() => client.send({ t: 'joinRoom', code: r.code }), 50); }}>
-                {r.joinable ? (r.started ? '接管机器人' : '进入') : '已满'}
-              </button>
+              <div className="room-actions">
+                <button className="ghost small" disabled={!r.joinable} onClick={() => { ensureName(); setTimeout(() => client.send({ t: 'joinRoom', code: r.code }), 50); }}>
+                  {r.joinable ? (r.started ? '接管机器人' : '进入') : '已满'}
+                </button>
+                {r.canClose && (
+                  <button className="ghost small danger" onClick={() => { if (confirm(`关闭房间 ${r.code}？里面的牌局会被删除。`)) client.send({ t: 'closeRoom', code: r.code }); }}>关闭</button>
+                )}
+              </div>
             </div>
           ))}
         </div>

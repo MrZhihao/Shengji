@@ -80,6 +80,16 @@ export class Registry {
     return room;
   }
 
+  /** 关闭房间并把成员的会话从房间里解绑 */
+  closeRoom(code: string, reason: string): void {
+    const room = this.rooms.get(code);
+    if (!room) return;
+    room.close(reason);
+    this.rooms.delete(code);
+    for (const s of this.sessions.values()) if (s.roomCode === code) s.roomCode = null;
+    this.scheduleSave();
+  }
+
   /** 回收空闲两小时的房间与一天没露面的会话 */
   gc(now = Date.now()): void {
     for (const [code, room] of this.rooms) {

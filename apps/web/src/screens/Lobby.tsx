@@ -44,6 +44,9 @@ export function Lobby({ client }: { client: GameClient }) {
           <div className="hint">等待房主开始</div>
         )}
         <button className="ghost" onClick={() => client.send({ t: 'leaveRoom' })}>离开房间</button>
+        {room.youAreHost && (
+          <button className="ghost danger" onClick={() => { if (confirm(`关闭房间 ${room.code}？所有人都会回到首页。`)) client.send({ t: 'closeRoom' }); }}>关闭房间</button>
+        )}
       </div>
     </div>
   );

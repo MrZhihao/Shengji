@@ -15,6 +15,7 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('hello'), name: z.string().trim().min(1).max(12), token: z.string().min(8).max(64).optional() }),
   z.object({ t: z.literal('createRoom'), players: z.union([z.literal(5), z.literal(6)]) }),
   z.object({ t: z.literal('listRooms') }),
+  z.object({ t: z.literal('closeRoom'), code: z.string().trim().length(4).optional() }),
   z.object({ t: z.literal('joinRoom'), code: z.string().trim().length(4) }),
   z.object({ t: z.literal('leaveRoom') }),
   z.object({ t: z.literal('sit'), seat: z.number().int().min(0).max(5) }),
@@ -75,6 +76,8 @@ export interface RoomSummary {
   readonly hostName: string;
   /** 有空位或机器人座位可以进 */
   readonly joinable: boolean;
+  /** 请求者能否关闭：自己是房主，或者房间里没有任何真人在线 */
+  readonly canClose: boolean;
   readonly lastActivity: number;
 }
 

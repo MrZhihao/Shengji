@@ -282,6 +282,31 @@ it('首页能列出服务器上的房间', async () => {
   c.ws.close();
 });
 
+it('房主可以关闭房间，成员被送回首页，列表里消失', async () => {
+  const host = new Client(server.port);
+  await host.open();
+  host.send({ t: 'hello', name: '房主丁' });
+  await host.next(); await host.next();
+  host.send({ t: 'createRoom', players: 5 });
+  const created = await host.until(isRoom);
+  const code = created.room!.code;
+  const guest = new Client(server.port);
+  await guest.open();
+  guest.send({ t: 'hello', name: '客戊' });
+  await guest.next(); await guest.next();
+  guest.send({ t: 'joinRoom', code });
+  await guest.until(isRoom);
+  guest.send({ t: 'closeRoom' });
+  const denied = await guest.until((m): m is Extract<ServerMessage, { t: 'error' }> => m.t === 'error');
+  expect(denied.code).toBe('NOT_HOST');
+  host.send({ t: 'closeRoom' });
+  await host.until((m): m is Extract<ServerMessage, { t: 'room' }> => isRoom(m) && m.room === null);
+  const kicked = await guest.until((m): m is Extract<ServerMessage, { t: 'room' }> => isRoom(m) && m.room === null);
+  expect(kicked.room).toBeNull();
+  expect(server.registry.rooms.has(code)).toBe(false);
+  host.ws.close(); guest.ws.close();
+});
+
 it('加入不存在的房间和开局后加入都会被拒绝', async () => {
   const c = new Client(server.port);
   await c.open();

@@ -131,7 +131,23 @@ export class Room {
     };
   }
 
-  summary(): RoomSummary {
+  /** 房主可以关，没有真人在线的房间谁都可以关 */
+  canClose(token: string): boolean {
+    return token === this.hostToken || !this.humansOnline();
+  }
+
+  /** 关闭房间：通知所有成员回首页，清掉定时器 */
+  close(reason: string): void {
+    this.dispose();
+    for (const m of this.members.values()) {
+      this.send(m, { t: 'error', code: 'ROOM_CLOSED', message: reason });
+      this.send(m, { t: 'room', room: null });
+    }
+    this.members.clear();
+    this.state = null;
+  }
+
+  summary(forToken: string): RoomSummary {
     let humans = 0, online = 0, bots = 0;
     const names: string[] = [];
     for (const [i, slot] of this.seats.entries()) {
@@ -155,6 +171,7 @@ export class Room {
       names,
       hostName: hostSeat !== null ? this.nameOfSeat(hostSeat, this.seats[hostSeat] ?? null) : (this.members.get(this.hostToken)?.name ?? '?'),
       joinable: this.seats.some((s) => !s || s.isBot),
+      canClose: this.canClose(forToken),
       lastActivity: this.lastActivity,
     };
   }

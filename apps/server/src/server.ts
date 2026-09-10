@@ -102,9 +102,18 @@ wss.on('connection', (ws: AliveSocket) => {
 
     switch (msg.t) {
       case 'ping': return send(ws, { t: 'pong' });
+      case 'closeRoom': {
+        const code = (msg.code ?? session.roomCode ?? '').toUpperCase();
+        const r = registry.rooms.get(code);
+        if (!r) return send(ws, { t: 'error', code: 'NO_ROOM', message: '房间不存在' });
+        if (!r.canClose(session.token)) return send(ws, { t: 'error', code: 'NOT_HOST', message: '只有房主能关闭有人在线的房间' });
+        const who = session.name;
+        registry.closeRoom(code, `${who} 关闭了房间 ${code}`);
+        return send(ws, { t: 'room', room: null });
+      }
       case 'listRooms': {
         const rooms = [...registry.rooms.values()]
-          .map((r) => r.summary())
+          .map((r) => r.summary(session.token))
           .filter((r) => r.humans > 0 || r.bots > 0)
           .sort((a, b) => b.lastActivity - a.lastActivity)
           .slice(0, 20);

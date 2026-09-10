@@ -230,6 +230,10 @@ export function Table({ client }: { client: GameClient }) {
                 setMenuOpen(false);
                 if (confirm('结束游戏回到大厅？所有人等级归零，座位保留。')) send({ t: 'abortGame' });
               }}>结束游戏</button>
+              <button className="ghost small danger" onClick={() => {
+                setMenuOpen(false);
+                if (confirm(`关闭房间 ${room.code}？牌局删除，所有人回到首页。`)) send({ t: 'closeRoom' });
+              }}>关闭房间</button>
             </>
           )}
           <button className="ghost small danger" onClick={() => {
