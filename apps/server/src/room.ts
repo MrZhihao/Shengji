@@ -88,6 +88,15 @@ export class Room {
     return this.state !== null;
   }
 
+  /** 有没有真人在线：没有的话机器人暂停，不再空转 */
+  humansOnline(): boolean {
+    return this.seats.some((slot) => {
+      if (!slot || slot.isBot) return false;
+      const m = this.members.get(slot.token);
+      return Boolean(m?.socket && m.socket.readyState === m.socket.OPEN);
+    });
+  }
+
   seatOf(token: string): Seat | null {
     const i = this.seats.findIndex((s) => s?.token === token);
     return i >= 0 ? i : null;
@@ -160,6 +169,8 @@ export class Room {
       this.members.set(token, { token, name, socket });
     }
     this.lastActivity = Date.now();
+    // 真人回来了：如果牌局因为没人在线而暂停，重新挂上定时器（不广播，状态由 sync 补发）
+    if (socket && this.state && this.seatOf(token) !== null) this.armTimers();
   }
 
   detach(token: string): void {
@@ -335,6 +346,11 @@ export class Room {
   private afterChange(events: readonly GameEvent[]): void {
     this.broadcastState(events);
     this.onChange();
+    this.armTimers();
+  }
+
+  /** 按当前阶段挂上需要的定时器：发牌、亮主缓冲、机器人出牌、自动下一局 */
+  private armTimers(): void {
     const s = this.state;
     if (!s) return;
     switch (s.phase) {
@@ -347,6 +363,7 @@ export class Room {
         if (!this.graceTimer) {
           this.graceTimer = setTimeout(() => {
             this.graceTimer = null;
+            if (!this.humansOnline()) return;
             this.botsMaybeDeclare();
             this.apply({ type: 'closeDeclaring' });
           }, this.opts.declareGraceMs);
@@ -358,9 +375,12 @@ export class Room {
         this.scheduleBot();
         break;
       case 'roundEnd':
-        // 房主是机器人（房主离开后）时自动开下一局
-        if (this.seats[this.seatOf(this.hostToken) ?? -1]?.isBot || this.seatOf(this.hostToken) === null) {
-          this.botTimer = setTimeout(() => { this.botTimer = null; this.apply({ type: 'nextRound' }); }, 8000);
+        // 房主不在座位上时自动开下一局，但没有真人在线就先停着
+        if (!this.botTimer && this.humansOnline() && this.seatOf(this.hostToken) === null) {
+          this.botTimer = setTimeout(() => {
+            this.botTimer = null;
+            if (this.humansOnline()) this.apply({ type: 'nextRound' });
+          }, 8000);
         }
         break;
       case 'gameOver':
@@ -371,6 +391,7 @@ export class Room {
   private dealTick(): void {
     this.dealTimer = null;
     if (!this.state || this.state.phase !== 'dealing') return;
+    if (!this.humansOnline()) return; // 暂停，真人回来后由 join 重新触发
     this.botsMaybeDeclare();
     if (this.state.phase !== 'dealing') return;
     this.apply({ type: 'dealCard' });
@@ -390,11 +411,12 @@ export class Room {
 
   private scheduleBot(): void {
     if (this.botTimer || !this.state) return;
+    if (!this.humansOnline()) return; // 没有真人在线，机器人暂停
     const turn = currentTurn(this.state);
     if (turn === null || !this.seats[turn]?.isBot) return;
     this.botTimer = setTimeout(() => {
       this.botTimer = null;
-      if (!this.state) return;
+      if (!this.state || !this.humansOnline()) return;
       const t = currentTurn(this.state);
       if (t === null || !this.seats[t]?.isBot) return;
       const a = smartAction(this.state, t, this.rng);

@@ -234,6 +234,38 @@ it('中途退出由机器人接管，再进来能接回座位，房主顺延', a
   host.ws.close(); guest.ws.close(); third.ws.close();
 }, 30_000);
 
+it('没有真人在线时机器人暂停，真人回来后继续', async () => {
+  const c = new Client(server.port);
+  await c.open();
+  c.send({ t: 'hello', name: '独苗' });
+  const welcome = await c.next() as Extract<ServerMessage, { t: 'welcome' }>;
+  await c.next();
+  c.send({ t: 'createRoom', players: 5 });
+  const created = await c.until(isRoom);
+  const code = created.room!.code;
+  for (let seat = 1; seat < 5; seat++) c.send({ t: 'addBot', seat });
+  await c.until((m): m is Extract<ServerMessage, { t: 'room' }> => isRoom(m) && m.room?.seats.every(Boolean) === true);
+  c.send({ t: 'start' });
+  let st = await c.until(isState);
+  for (let i = 0; i < 5; i++) st = await c.until(isState);
+  c.ws.close();
+  await new Promise((r) => setTimeout(r, 150));
+  const room = server.registry.rooms.get(code)!;
+  const dealtAtClose = room.state!.hands.reduce((a, h) => a + h.length, 0);
+  await new Promise((r) => setTimeout(r, 200)); // 发牌间隔 2ms，若未暂停会多发上百张
+  const dealtLater = room.state!.hands.reduce((a, h) => a + h.length, 0);
+  expect(dealtLater - dealtAtClose).toBeLessThanOrEqual(1);
+  // 真人回来，发牌继续
+  const c2 = new Client(server.port);
+  await c2.open();
+  c2.send({ t: 'hello', name: '独苗', token: welcome.token });
+  await c2.until(isState);
+  await new Promise((r) => setTimeout(r, 200));
+  const dealtResumed = room.state!.hands.reduce((a, h) => a + h.length, 0);
+  expect(dealtResumed).toBeGreaterThan(dealtLater + 5);
+  c2.ws.close();
+}, 30_000);
+
 it('加入不存在的房间和开局后加入都会被拒绝', async () => {
   const c = new Client(server.port);
   await c.open();
