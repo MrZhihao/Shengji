@@ -82,3 +82,13 @@ viewFor(state, seat);   // 该座位能看到的信息
 ```
 
 操作类型：`dealCard`、`declare`、`closeDeclaring`、`exchangeBottom`、`callFriend`、`play`、`nextRound`。
+
+## 参考资料
+
+机器人策略参考了这些公开攻略与规则整理：
+
+- [升级基础打法和技巧攻略 - 87G](http://www.87g.com/zixun/27171.html)
+- [An Introduction to Sheng Ji / Tractor - Benjamin Zhang](https://static1.squarespace.com/static/5942f94fb8a79b3aa562e99d/t/62c340d68ede295f34d37bb4/1656963287304/An_Introduction_To_Sheng_Ji_Tractor.pdf)
+- [Zhao Pengyou - pagat.com](https://www.pagat.com/kt5/pengyou.html)
+- [《找朋友》扑克游戏规则 - 文学城](https://www.wenxuecity.com/blog/201201/37660/19953.html)
+- [“找朋友”、“掼蛋”和“大掼路子” - 新浪博客](https://blog.sina.com.cn/s/blog_54644bfd01017iow.html)

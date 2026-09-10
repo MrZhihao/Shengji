@@ -195,7 +195,10 @@ export function trumpStrength(hand: readonly Card[], level: number, suit: Suit |
       if (!hand.some((c) => c.suit === other && c.rank !== level)) voids++;
     }
   }
-  return expected + high * 1.5 + pairs * 1.2 + voids * 1.5 * progress;
+  let strength = expected + high * 1.5 + pairs * 1.2 + voids * 1.5 * progress;
+  // 无主通常对闲家有利（主牌少、四门副牌难控）；但级牌是 10 或 K 时领一对王能逼出分牌，很划算
+  if (suit === null) strength += level === 10 || level === 13 ? 2.5 : -1.5;
+  return strength;
 }
 
 /** 亮主阈值，可在模拟器里调参 */
@@ -232,6 +235,8 @@ function declareV2(s: GameState, seat: Seat, options: Card[][]): Action | null {
   if (best.mine) return { type: 'declare', seat, cards: best.cards.map((c) => c.id) };
   const count = best.cards.length;
   let threshold = count >= 3 ? 0 : count === 2 ? smartTuning.declarePair : smartTuning.declareSingle;
+  // 首局无人亮主：见级牌就亮抢庄，坐庄有底牌和先手，之后抓到第二张再加固
+  if (s.round === 1 && !current && best.cards[0]?.suit !== 'J') threshold = 0;
   // 发牌早期手牌还不全，谨慎一点；快发完了还没人亮，就放低要求抢庄
   if (progress < 0.5) threshold += smartTuning.earlyPenalty;
   if (!current && progress > 0.85) threshold -= smartTuning.lateBonus;
@@ -571,6 +576,8 @@ function leadCandidates(s: GameState, seat: Seat, sides: Sides, unseen: Map<stri
       if (isSafe) {
         score = 100 + comp.cards.length * 10 + pts * 2;
         if (g === 'T' && !sides.likelyDealerSide && trumpCount < 6) score -= 30; // 闲家别急着放主
+        // 先出短门的强牌，再出长门的，防止被人趁机绝门
+        if (g !== 'T') score += Math.max(0, 6 - cards.length);
       } else if (g === 'T') {
         // 庄家阵营主牌够多就拉主，朋友都现身后配合更明确，门槛放低
         const allKnown = s.friendCalls.length > 0 && s.friendCalls.every((c) => c.resolvedSeat !== null);
@@ -592,6 +599,10 @@ function leadCandidates(s: GameState, seat: Seat, sides: Sides, unseen: Map<stri
           else if (pts === 0 && trumpCount >= 7) score += 18 + early * 3;
         }
       }
+      // 连对拖拉机要早出，免得被别人领一对拆散
+      if (f.lead && comp.kind === 'tractor' && s.tricks.length < 10) score += 16 + Math.max(0, 6 - s.tricks.length) * 2;
+      // 领小主让队友接管：阵营已明、自己没有稳赢的牌、手里有小主时，用小主把上手权交给队友的大主
+      if (f.lead && g === 'T' && comp.kind === 'single' && sides.mates.size > 1 && safe.length === 0 && comp.top <= 5 && trumpsOutside > 0 && !lastTrick) score += 12;
       // 最后几墩：能赢就赢，末墩关系到抠底
       if (lastTrick && isSafe) score += 30;
       if (f.lead && g !== 'T' && trumpsOutside > 0) {
@@ -703,7 +714,13 @@ function evaluateFollow(s: GameState, seat: Seat, sides: Sides, cards: Card[], f
     // 叫的是「第一张 A」时，庄家引牌让 A 收墩就是在找朋友，别把 A 攥着。
     if (sides.likelyDealerSide && seat !== s.dealer) {
       const reveals = s.friendCalls.some((c) => c.resolvedSeat === null && cards.some((x) => x.suit === c.suit && x.rank === c.rank));
-      if (reveals && weWin && winner === seat) score += 3 + Math.max(0, 8 - s.tricks.length) * 0.4;
+      if (reveals && weWin && winner === seat) {
+        // 牌力越强越不急着现身：主牌很多时先隐藏，让闲家互相猜忌，晚些再亮身份
+        const ctx2 = ctxOf(s);
+        const myTrumps = hand.filter((c) => groupOf(c, ctx2) === 'T').length;
+        const hide = Math.min(1, Math.max(0, (myTrumps - 6) / 6));
+        score += (3 + Math.max(0, 8 - s.tricks.length) * 0.4) * (1 - hide);
+      }
     }
     if (weWin) {
       // 不稳的赢墩上送分要打折，自己赢比队友赢略保守
