@@ -1,5 +1,5 @@
 # fly launch --no-deploy 会生成 app 名字；这里只固定区域、健康检查和卷。
-app = "shengji"
+app = "shengji-zhaopengyou"
 primary_region = "ewr"
 
 [build]
