@@ -169,7 +169,8 @@ b { font-weight: 700; }
 .toasts { position: fixed; top: calc(12px + env(safe-area-inset-top)); left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; z-index: 30; }
 .toast { pointer-events: auto; background: rgba(20,20,20,.92); color: #fff; padding: 10px 14px; border-radius: 10px; font-size: 14px; max-width: 90vw; animation: pop .2s ease-out; }
 .toast.error { background: var(--red); }
-.offline { position: fixed; bottom: 0; left: 0; right: 0; background: var(--red); color: #fff; text-align: center; font-size: 13px; padding: 6px; z-index: 40; }
+.offline { position: fixed; bottom: 0; left: 0; right: 0; background: var(--red); color: #fff; text-align: center; font-size: 13px; padding: 6px; z-index: 40; display: flex; gap: 10px; justify-content: center; align-items: center; }
+.offline-btn { background: rgba(255,255,255,.18); color: #fff; border: 1px solid rgba(255,255,255,.5); border-radius: 6px; padding: 2px 10px; font-size: 12px; }
 
 /* 动画 */
 @keyframes fly-in { from { transform: translate(calc(-50% + var(--fx, 0px)), calc(-50% + var(--fy, 0px))) scale(.7); opacity: 0; } to { transform: translate(-50%, -50%) scale(1); opacity: 1; } }

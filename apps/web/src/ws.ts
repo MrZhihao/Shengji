@@ -25,6 +25,8 @@ export interface GameClient {
 
 const NAME_KEY = 'shengji.name';
 const TOKEN_KEY = 'shengji.token';
+/** 断线时点了退出：本地先离开，重连后补发 leaveRoom */
+const PENDING_LEAVE_KEY = 'shengji.pendingLeave';
 
 function wsUrl(): string {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -61,6 +63,7 @@ export function useGameClient(): GameClient {
         if (nameRef.current) {
           const token = localStorage.getItem(TOKEN_KEY) ?? undefined;
           ws.send(JSON.stringify({ t: 'hello', name: nameRef.current, token }));
+          if (localStorage.getItem(PENDING_LEAVE_KEY)) ws.send(JSON.stringify({ t: 'leaveRoom' }));
         }
       };
       ws.onmessage = (ev) => {
@@ -68,10 +71,17 @@ export function useGameClient(): GameClient {
         switch (msg.t) {
           case 'welcome': localStorage.setItem(TOKEN_KEY, msg.token); break;
           case 'room':
+            if (localStorage.getItem(PENDING_LEAVE_KEY)) {
+              // 退出还没被服务端确认前，忽略把我们拉回房间的消息
+              if (msg.room) break;
+              localStorage.removeItem(PENDING_LEAVE_KEY);
+            }
             setRoom(msg.room);
             if (!msg.room || !msg.room.started) setView(null);
             break;
-          case 'state': setView(msg.view); setEvents(msg.events); break;
+          case 'state':
+            if (localStorage.getItem(PENDING_LEAVE_KEY)) break;
+            setView(msg.view); setEvents(msg.events); break;
           case 'error': pushToast('error', msg.message); break;
           case 'replay': setReplay(msg.replay); break;
           case 'pong': break;
@@ -93,8 +103,14 @@ export function useGameClient(): GameClient {
 
   const send = (msg: ClientMessage) => {
     const ws = wsRef.current;
+    if (msg.t === 'leaveRoom') {
+      // 退出本地立即生效；断线时记下来，重连后补发
+      localStorage.setItem(PENDING_LEAVE_KEY, '1');
+      setRoom(null);
+      setView(null);
+    }
     if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
-    else pushToast('error', '还没连上服务器');
+    else if (msg.t !== 'leaveRoom') pushToast('error', '还没连上服务器');
   };
 
   const setName = (n: string) => {

@@ -34,7 +34,12 @@ export function App() {
           <div key={t.id} className={`toast ${t.kind}`} onClick={() => client.dismissToast(t.id)}>{t.text}</div>
         ))}
       </div>
-      {!client.connected && <div className="offline">连接断开，正在重连…</div>}
+      {!client.connected && (
+        <div className="offline">
+          连接断开，正在重连…
+          {client.room && <button className="offline-btn" onClick={() => client.send({ t: 'leaveRoom' })}>退出本局</button>}
+        </div>
+      )}
     </>
   );
 }
