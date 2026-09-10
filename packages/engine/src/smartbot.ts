@@ -571,6 +571,12 @@ function evaluateFollow(s: GameState, seat: Seat, sides: Sides, cards: Card[], f
     const hand = s.hands[seat] ?? [];
     const isLastTrick = hand.length === cards.length;
     const secure = remaining === 0 || (unseen !== null && winnerSecure(s, seat, plays, winnerIdx, unseen));
+    // 握着朋友牌的人：打出朋友牌就亮明身份，之后全队能配合，越早越值。
+    // 叫的是「第一张 A」时，庄家引牌让 A 收墩就是在找朋友，别把 A 攥着。
+    if (sides.likelyDealerSide && seat !== s.dealer) {
+      const reveals = s.friendCalls.some((c) => c.resolvedSeat === null && cards.some((x) => x.suit === c.suit && x.rank === c.rank));
+      if (reveals && weWin && winner === seat) score += 3 + Math.max(0, 8 - s.tricks.length) * 0.4;
+    }
     if (weWin) {
       // 不稳的赢墩上送分要打折，自己赢比队友赢略保守
       const factor = secure ? 1 : winner === seat ? 0.55 : 0.7;
