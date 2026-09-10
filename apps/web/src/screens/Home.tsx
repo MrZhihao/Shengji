@@ -67,18 +67,21 @@ export function Home({ client }: { client: GameClient }) {
           {client.rooms && client.rooms.length === 0 && <div className="hint">现在没有房间，开一个吧</div>}
           {client.rooms?.map((r) => (
             <div key={r.code} className="room-row">
-              <div className="room-main">
+              <div className="room-left">
                 <span className="room-code">{r.code}</span>
-                <span className="room-meta">{r.players} 人 · {phaseText(r)} · 房主 {r.hostName}</span>
-                <span className="room-names">{r.names.join('、')}{r.bots ? `${r.names.length ? '、' : ''}机器人×${r.bots}` : ''}{r.humansOnline < r.humans ? ` · ${r.humans - r.humansOnline} 人离线` : ''}</span>
+                <div className="room-actions">
+                  <button className="primary small" disabled={!r.joinable} onClick={() => { ensureName(); setTimeout(() => client.send({ t: 'joinRoom', code: r.code }), 50); }}>
+                    {r.joinable ? (r.started ? '接管机器人' : '进入') : '已满'}
+                  </button>
+                  {r.canClose && (
+                    <button className="ghost small danger" onClick={() => { if (confirm(`关闭房间 ${r.code}？里面的牌局会被删除。`)) client.send({ t: 'closeRoom', code: r.code }); }}>关闭</button>
+                  )}
+                </div>
               </div>
-              <div className="room-actions">
-                <button className="ghost small" disabled={!r.joinable} onClick={() => { ensureName(); setTimeout(() => client.send({ t: 'joinRoom', code: r.code }), 50); }}>
-                  {r.joinable ? (r.started ? '接管机器人' : '进入') : '已满'}
-                </button>
-                {r.canClose && (
-                  <button className="ghost small danger" onClick={() => { if (confirm(`关闭房间 ${r.code}？里面的牌局会被删除。`)) client.send({ t: 'closeRoom', code: r.code }); }}>关闭</button>
-                )}
+              <div className="room-main">
+                <span className="room-meta">{r.players} 人 · {phaseText(r)}</span>
+                <span className="room-meta">房主 {r.hostName}</span>
+                <span className="room-names">{r.names.join('、')}{r.bots ? `${r.names.length ? '、' : ''}机器人×${r.bots}` : ''}{r.humansOnline < r.humans ? ` · ${r.humans - r.humansOnline} 人离线` : ''}</span>
               </div>
             </div>
           ))}
