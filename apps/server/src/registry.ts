@@ -72,7 +72,7 @@ export class Registry {
     }
   }
 
-  createRoom(hostToken: string, players: 5 | 6): Room {
+  createRoom(hostToken: string, players: 4 | 5 | 6): Room {
     const room = new Room(this.newCode(), players, hostToken, this.roomOptions);
     this.attach(room);
     this.rooms.set(room.code, room);

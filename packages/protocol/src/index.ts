@@ -13,7 +13,7 @@ export const friendCallSchema = z.object({
 
 export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('hello'), name: z.string().trim().min(1).max(12), token: z.string().min(8).max(64).optional() }),
-  z.object({ t: z.literal('createRoom'), players: z.union([z.literal(5), z.literal(6)]) }),
+  z.object({ t: z.literal('createRoom'), players: z.union([z.literal(4), z.literal(5), z.literal(6)]) }),
   z.object({ t: z.literal('listRooms') }),
   z.object({ t: z.literal('closeRoom'), code: z.string().trim().length(4).optional() }),
   z.object({ t: z.literal('joinRoom'), code: z.string().trim().length(4) }),
@@ -55,7 +55,7 @@ export interface RoomPlayer {
 
 export interface RoomInfo {
   readonly code: string;
-  readonly players: 5 | 6;
+  readonly players: 4 | 5 | 6;
   readonly seats: readonly (RoomPlayer | null)[];
   readonly started: boolean;
   /** 机器人强度：normal 规则机器人反应快；strong 搜索机器人更会打但每手多想一秒 */
@@ -68,7 +68,7 @@ export interface RoomInfo {
 /** 首页显示的服务器房间概览 */
 export interface RoomSummary {
   readonly code: string;
-  readonly players: 5 | 6;
+  readonly players: 4 | 5 | 6;
   readonly started: boolean;
   readonly round: number;
   readonly phase: string | null;

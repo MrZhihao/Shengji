@@ -38,7 +38,9 @@ export function currentTurn(s: GameState): Seat | null {
 }
 
 export function dealerTeam(s: GameState): Seat[] {
-  return s.dealer === null ? [] : [s.dealer, ...s.friends];
+  if (s.dealer === null) return [];
+  if (s.config.mode === 'partners') return [s.dealer, (s.dealer + 2) % s.config.players];
+  return [s.dealer, ...s.friends];
 }
 
 export function createGame(config: GameConfig, seed: string, opts: CreateOptions = {}): GameState {
@@ -224,11 +226,13 @@ function exchangeBottom(s: GameState, seat: Seat, ids: readonly string[]): Apply
   if (cards.length !== s.config.bottomSize) {
     return fail('WRONG_CARD_COUNT', `必须扣 ${s.config.bottomSize} 张`);
   }
+  // 对家模式没有叫朋友，扣完底直接开打
   const next: GameState = {
     ...s,
     hands: replaceAt(s.hands, seat, removeCards(hand, cards)),
     bottom: cards,
-    phase: 'callFriend',
+    phase: s.config.friendCount === 0 ? 'playing' : 'callFriend',
+    trick: s.config.friendCount === 0 ? { leader: seat, plays: [], lead: null } : s.trick,
   };
   return ok(next, [{ type: 'bottomExchanged', seat }]);
 }

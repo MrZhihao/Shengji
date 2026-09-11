@@ -5,7 +5,7 @@ import { buildTime } from '../pwa.ts';
 export function Home({ client }: { client: GameClient }) {
   const [name, setName] = useState(client.name);
   const [code, setCode] = useState(() => (new URLSearchParams(location.search).get('room') ?? '').toUpperCase().slice(0, 4));
-  const [players, setPlayers] = useState<5 | 6>(6);
+  const [players, setPlayers] = useState<4 | 5 | 6>(6);
   const ready = name.trim().length > 0;
 
   // 已登记名字后，每 4 秒刷新一次服务器上的房间
@@ -43,9 +43,11 @@ export function Home({ client }: { client: GameClient }) {
       <div className="panel">
         <div className="panel-title">开房</div>
         <div className="seg">
+          <button className={players === 4 ? 'on' : ''} onClick={() => setPlayers(4)}>4 人 · 对家</button>
           <button className={players === 5 ? 'on' : ''} onClick={() => setPlayers(5)}>5 人 · 1 个朋友</button>
           <button className={players === 6 ? 'on' : ''} onClick={() => setPlayers(6)}>6 人 · 2 个朋友</button>
         </div>
+        <div className="hint">{players === 4 ? '两副牌，每人 25 张，底牌 8 张，40 分一级、80 分下庄，对家固定一队。' : '三副牌，找朋友：庄家扣底后叫朋友牌，谁打出谁就是自己人。'}</div>
         <button className="primary" disabled={!ready} onClick={() => { ensureName(); setTimeout(() => client.send({ t: 'createRoom', players }), 50); }}>
           创建房间
         </button>

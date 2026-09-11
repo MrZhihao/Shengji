@@ -153,7 +153,7 @@ export function sidesOf(s: GameState, seat: Seat): Sides {
     return { mates, likelyDealerSide: true };
   }
   const mates = new Set<Seat>([seat]);
-  const allKnown = s.friendCalls.length > 0 && s.friendCalls.every((c) => c.resolvedSeat !== null);
+  const allKnown = s.config.friendCount === 0 || (s.friendCalls.length > 0 && s.friendCalls.every((c) => c.resolvedSeat !== null));
   if (allKnown) for (let i = 0; i < s.config.players; i++) if (!team.includes(i)) mates.add(i);
   return { mates, likelyDealerSide: false };
 }
@@ -325,6 +325,7 @@ function suitPlan(s: GameState, hand: readonly Card[], suit: Suit, callsInSuit: 
  * 两个朋友时优先同一门叫「第 n、n+1 张」，垫牌不够再考虑第二门。
  */
 export function planDealer(s: GameState, seat: Seat): DealerPlan {
+  if (s.config.friendCount === 0) return { calls: [], keep: new Set(), dumps: [] };
   const hand = s.hands[seat] ?? [];
   const bottomKnown = s.phase === 'bottom' ? [] : s.bottom;
   // 扣底阶段可以垫 bottomSize 张；叫朋友阶段牌已定，只能选已经垫干净的门
@@ -613,7 +614,7 @@ function leadCandidates(s: GameState, seat: Seat, sides: Sides, unseen: Map<stri
         if (g !== 'T') score += Math.max(0, 6 - cards.length);
       } else if (g === 'T') {
         // 庄家阵营主牌够多就拉主，朋友都现身后配合更明确，门槛放低
-        const allKnown = s.friendCalls.length > 0 && s.friendCalls.every((c) => c.resolvedSeat !== null);
+        const allKnown = s.config.friendCount === 0 || (s.friendCalls.length > 0 && s.friendCalls.every((c) => c.resolvedSeat !== null));
         const drawTrumps = sides.likelyDealerSide && trumpCount >= (allKnown ? 7 : 8);
         score = (drawTrumps ? 60 : 15) - comp.top - pts * 4 - (comp.cards.length - 1) * 8;
       } else {

@@ -53,7 +53,7 @@ export class Room {
   /** 任何需要落盘的变化后调用 */
   onChange: () => void = () => {};
 
-  constructor(code: string, players: 5 | 6, hostToken: string, opts: RoomOptions = defaultRoomOptions) {
+  constructor(code: string, players: 4 | 5 | 6, hostToken: string, opts: RoomOptions = defaultRoomOptions) {
     this.code = code;
     this.config = defaultConfig(players);
     this.hostToken = hostToken;

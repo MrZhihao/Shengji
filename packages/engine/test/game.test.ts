@@ -218,3 +218,41 @@ describe('随机对局', () => {
     });
   });
 });
+
+describe('四人对家模式', () => {
+  it('两副牌 25 张留 8 张底，扣底后直接开打，对家一队', () => {
+    const cfg = defaultConfig(4);
+    expect(cfg.mode).toBe('partners');
+    expect(handSize(cfg)).toBe(25);
+    let s = dealAll(createGame(cfg, 'p4-flow'));
+    expect(s.hands.every((h) => h.length === 25)).toBe(true);
+    expect(s.bottom.length).toBe(8);
+    const seat = s.hands.findIndex((h) => h.some((c) => c.rank === 5 && c.suit !== 'J'));
+    const card = s.hands[seat]!.find((c) => c.rank === 5 && c.suit !== 'J')!;
+    s = must(applyAction(s, { type: 'declare', seat, cards: [card.id] }));
+    s = must(applyAction(s, { type: 'closeDeclaring' }));
+    expect(s.hands[seat]!.length).toBe(33);
+    s = must(applyAction(s, { type: 'exchangeBottom', seat, cards: s.hands[seat]!.slice(0, 8).map((c) => c.id) }));
+    expect(s.phase).toBe('playing');
+    expect(s.trick?.leader).toBe(seat);
+    const v = viewFor(s, (seat + 1) % 4);
+    expect(v.dealerTeam).toEqual([seat, (seat + 2) % 4]);
+    expect([...v.knownOpponents].sort()).toEqual([(seat + 1) % 4, (seat + 3) % 4].sort());
+  });
+
+  it('守庄换对家坐庄，下庄换下家；两人共用等级', () => {
+    let checked = 0;
+    simulateGame(defaultConfig(4), 'p4-dealer', {
+      maxRounds: 15,
+      onEvent: (e) => {
+        if (e.type !== 'roundScored') return;
+        const r = e.result;
+        expect(r.nextDealer).toBe(r.dealerHeld ? (r.dealer + 2) % 4 : (r.dealer + 1) % 4);
+        expect(r.levelsAfter[r.dealer]).toBe(r.levelsAfter[(r.dealer + 2) % 4]);
+        expect(r.levelsAfter[(r.dealer + 1) % 4]).toBe(r.levelsAfter[(r.dealer + 3) % 4]);
+        checked++;
+      },
+    });
+    expect(checked).toBeGreaterThan(0);
+  });
+});

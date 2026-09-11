@@ -6,7 +6,7 @@ import type { RoundReplay } from '@shengji/protocol';
 
 export interface RoomSnapshot {
   readonly code: string;
-  readonly players: 5 | 6;
+  readonly players: 4 | 5 | 6;
   readonly hostToken: string;
   readonly seats: readonly ({ token: string; isBot: boolean } | null)[];
   readonly members: readonly { token: string; name: string }[];

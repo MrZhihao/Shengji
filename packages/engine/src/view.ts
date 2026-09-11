@@ -42,8 +42,8 @@ export interface PlayerView {
 
 export function viewFor(s: GameState, seat: Seat): PlayerView {
   const team = dealerTeam(s);
-  const allFriendsKnown = s.dealer !== null && s.friendCalls.length > 0
-    && s.friendCalls.every((c) => c.resolvedSeat !== null);
+  const allFriendsKnown = s.dealer !== null
+    && (s.config.friendCount === 0 || (s.friendCalls.length > 0 && s.friendCalls.every((c) => c.resolvedSeat !== null)));
   const knownOpponents: Seat[] = [];
   if (allFriendsKnown || s.phase === 'roundEnd' || s.phase === 'gameOver') {
     for (let i = 0; i < s.config.players; i++) if (!team.includes(i)) knownOpponents.push(i);

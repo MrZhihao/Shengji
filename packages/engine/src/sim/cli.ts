@@ -24,8 +24,8 @@ const smartFeatures: SmartFeatures = featureArg === 'all' ? SMART_V2 : {
   follow: featureArg.includes('follow'),
 };
 
-if (players !== 5 && players !== 6) {
-  console.error('--players 只能是 5 或 6');
+if (players !== 4 && players !== 5 && players !== 6) {
+  console.error('--players 只能是 4、5 或 6');
   process.exit(1);
 }
 

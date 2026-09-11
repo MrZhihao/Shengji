@@ -1,9 +1,13 @@
 /** 一局游戏的规则配置。存在地方差异的规则全部放在这里。 */
 
-export type PlayerCount = 5 | 6;
+export type PlayerCount = 4 | 5 | 6;
+
+/** friends：找朋友，庄家叫朋友组队；partners：四人对家固定一队 */
+export type GameMode = 'friends' | 'partners';
 
 export interface GameConfig {
   readonly players: PlayerCount;
+  readonly mode: GameMode;
   readonly decks: number;
   /** 底牌张数 */
   readonly bottomSize: number;
@@ -31,9 +35,26 @@ export interface GameConfig {
 export const TOTAL_POINTS_PER_DECK = 100;
 
 export function defaultConfig(players: PlayerCount): GameConfig {
+  if (players === 4) {
+    // 四人对家：两副牌，每人 25 张，底牌 8 张，总分 200，40 分一级、80 分下庄
+    return {
+      players: 4,
+      mode: 'partners',
+      decks: 2,
+      bottomSize: 8,
+      friendCount: 0,
+      levelStep: 40,
+      throwPenaltyPerCard: 10,
+      bottomMultiplier: { single: 2, pair: 4, triple: 8, tractor: 8 },
+      allowEqualCountOverride: false,
+      dealerCountsForFriend: true,
+      redealIfNoDeclarerFirstRound: true,
+    };
+  }
   const five = players === 5;
   return {
     players,
+    mode: 'friends',
     decks: 3,
     bottomSize: five ? 7 : 6,
     friendCount: five ? 1 : 2,
