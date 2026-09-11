@@ -7,6 +7,7 @@ import type { ClientMessage } from '@shengji/protocol';
 import { CardRow, CardView } from '../components/CardView.tsx';
 import { FriendCallForm } from '../components/FriendCallForm.tsx';
 import { RoundEnd } from '../components/RoundEnd.tsx';
+import { Avatar } from '../avatar.tsx';
 import { sound } from '../sound.ts';
 import type { GameClient } from '../ws.ts';
 
@@ -318,7 +319,7 @@ export function Table({ client }: { client: GameClient }) {
           const isTurn = view.currentTurn === seat;
           return (
             <div key={seat} className={`badge ${isTurn ? 'turn' : ''} ${role.cls}`} style={pct(posOf(seat))}>
-              <span className={`role ${role.cls}`}>{role.text}</span>
+              <span className="b-avatar"><Avatar name={name(seat)} isBot={Boolean(s?.isBot)} size={30} /><span className={`role role-dot ${role.cls}`}>{role.text}</span></span>
               <span className="b-name">{name(seat)}</span>
               <span className="b-meta">
                 <span className="b-level">{rankName(levelRank(view.levels[seat] ?? 0))}</span>

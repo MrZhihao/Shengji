@@ -8,7 +8,7 @@ export interface RoomSnapshot {
   readonly code: string;
   readonly players: 4 | 5 | 6;
   readonly hostToken: string;
-  readonly seats: readonly ({ token: string; isBot: boolean } | null)[];
+  readonly seats: readonly ({ token: string; isBot: boolean; name?: string } | null)[];
   readonly members: readonly { token: string; name: string }[];
   readonly state: GameState | null;
   readonly seq: number;

@@ -1,4 +1,5 @@
 import type { GameClient } from '../ws.ts';
+import { Avatar } from '../avatar.tsx';
 
 export function Lobby({ client }: { client: GameClient }) {
   const room = client.room!;
@@ -21,7 +22,7 @@ export function Lobby({ client }: { client: GameClient }) {
             <div className="seat-no">{i + 1} 号位</div>
             {s ? (
               <>
-                <div className="seat-name">{s.name}{s.isHost && <span className="tag">房主</span>}{s.isBot && <span className="tag">机器人</span>}</div>
+                <div className="seat-name"><Avatar name={s.name} isBot={s.isBot} size={30} />{s.name}{s.isHost && <span className="tag">房主</span>}{s.isBot && <span className="tag">机器人</span>}</div>
                 {!s.connected && <div className="seat-off">已断线</div>}
                 {room.youAreHost && s.isBot && <button className="ghost small" onClick={() => client.send({ t: 'removeBot', seat: i })}>移除</button>}
                 {room.you === i && <button className="ghost small" onClick={() => client.send({ t: 'stand' })}>起立</button>}
@@ -41,7 +42,7 @@ export function Lobby({ client }: { client: GameClient }) {
           <button className={room.botStrength === 'normal' ? 'on' : ''} disabled={!room.youAreHost} onClick={() => client.send({ t: 'setBots', strength: 'normal' })}>普通 · 反应快</button>
           <button className={room.botStrength === 'strong' ? 'on' : ''} disabled={!room.youAreHost} onClick={() => client.send({ t: 'setBots', strength: 'strong' })}>加强 · 会算牌</button>
         </div>
-        <div className="hint">{room.botStrength === 'strong' ? '加强版每手会推演几十种可能的牌局再出牌，多等约一秒。' : '普通版按牌桌常识出牌，几乎不用等。'}{!room.youAreHost && ' 只有房主能改。'}</div>
+        <div className="hint">{room.botStrength === 'strong' ? '加强版每手会推演几十种可能的牌局再出牌，多等约一秒。' : '普通版按牌桌常识出牌，几乎不用等。'}{!room.youAreHost && ' 只有房主能改。'} 机器人以电影明星命名，头像来自维基百科。</div>
       </div>
       <div className="lobby-actions">
         {room.youAreHost ? (

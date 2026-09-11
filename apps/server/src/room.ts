@@ -7,6 +7,7 @@ import type { RoomInfo, RoomSummary, RoundReplay, ServerMessage } from '@shengji
 import type { WebSocket } from 'ws';
 import type { RoomSnapshot } from './store.ts';
 import { getSearchPool } from './searchPool.ts';
+import { pickStarName } from './stars.ts';
 
 export interface Member {
   readonly token: string;
@@ -17,6 +18,8 @@ export interface Member {
 interface SeatSlot {
   readonly token: string;
   readonly isBot: boolean;
+  /** 机器人的明星名字 */
+  readonly name?: string;
 }
 
 export interface RoomOptions {
@@ -67,7 +70,7 @@ export class Room {
       code: this.code,
       players: this.config.players,
       hostToken: this.hostToken,
-      seats: this.seats.map((s) => (s ? { token: s.token, isBot: s.isBot } : null)),
+      seats: this.seats.map((s) => (s ? { token: s.token, isBot: s.isBot, name: s.name } : null)),
       members: [...this.members.values()].map((m) => ({ token: m.token, name: m.name })),
       state: this.state,
       seq: this.seq,
@@ -79,7 +82,7 @@ export class Room {
 
   static fromSnapshot(snap: RoomSnapshot, opts: RoomOptions): Room {
     const room = new Room(snap.code, snap.players, snap.hostToken, opts);
-    snap.seats.forEach((s, i) => { room.seats[i] = s ? { token: s.token, isBot: s.isBot } : null; });
+    snap.seats.forEach((s, i) => { room.seats[i] = s ? { token: s.token, isBot: s.isBot, name: s.name } : null; });
     for (const m of snap.members) room.members.set(m.token, { token: m.token, name: m.name, socket: null });
     room.state = snap.state;
     room.seq = snap.seq;
@@ -96,6 +99,13 @@ export class Room {
 
   get started(): boolean {
     return this.state !== null;
+  }
+
+  /** 新建一个机器人座位，名字从明星表里挑一个本房间没用过的 */
+  private makeBot(seat: Seat): SeatSlot {
+    const used = new Set<string>();
+    for (const s of this.seats) if (s?.isBot && s.name) used.add(s.name);
+    return { token: `bot:${seat}`, isBot: true, name: pickStarName(used, () => this.rng.next(), `机器人${seat + 1}`) };
   }
 
   /** 有没有真人在线：没有的话机器人暂停，不再空转 */
@@ -129,7 +139,7 @@ export class Room {
         const m = this.members.get(s.token);
         return {
           seat,
-          name: s.isBot ? `机器人${seat + 1}` : (m?.name ?? '?'),
+          name: s.isBot ? (s.name ?? `机器人${seat + 1}`) : (m?.name ?? '?'),
           connected: s.isBot || Boolean(m?.socket && m.socket.readyState === m.socket.OPEN),
           isBot: s.isBot,
           isHost: s.token === this.hostToken,
@@ -250,7 +260,7 @@ export class Room {
     const seat = this.seatOf(token);
     if (this.started && seat !== null) {
       // 游戏中离开：座位交给机器人接管；房主离开则把房主交给下一位真人
-      this.seats[seat] = { token: `bot:${seat}`, isBot: true };
+      this.seats[seat] = this.makeBot(seat);
       this.members.delete(token);
       if (token === this.hostToken) {
         const next = this.seats.find((s) => s && !s.isBot);
@@ -305,7 +315,7 @@ export class Room {
     if (token !== this.hostToken) return this.error(token, 'NOT_HOST', '只有房主能添加机器人');
     if (this.started) return this.error(token, 'STARTED', '游戏已经开始');
     if (this.seats[seat]) return this.error(token, 'SEAT_TAKEN', '这个座位已经有人');
-    this.seats[seat] = { token: `bot:${seat}`, isBot: true };
+    this.seats[seat] = this.makeBot(seat);
     this.broadcastRoom();
   }
 
@@ -374,7 +384,7 @@ export class Room {
 
   private nameOfSeat(seat: Seat, slot: SeatSlot | null): string {
     if (!slot) return `${seat + 1} 号`;
-    if (slot.isBot) return `机器人${seat + 1}`;
+    if (slot.isBot) return slot.name ?? `机器人${seat + 1}`;
     return this.members.get(slot.token)?.name ?? `${seat + 1} 号`;
   }
 
