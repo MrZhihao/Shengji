@@ -101,7 +101,7 @@ b { font-weight: 700; }
 .avatar-text { color: #fff; font-weight: 700; }
 .seat-name { display: flex; align-items: center; gap: 8px; }
 .b-avatar { position: relative; grid-row: 1 / span 2; display: inline-flex; }
-.b-avatar .role-dot { position: absolute; right: -6px; bottom: -4px; width: 16px; height: 16px; font-size: 10px; border-radius: 5px; border: 1.5px solid rgba(0,0,0,.5); }
+.b-avatar .role-dot { position: absolute; right: -6px; bottom: -4px; width: 19px; height: 19px; font-size: 12px; border-radius: 6px; border: 1.5px solid rgba(0,0,0,.5); }
 .role { display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center; border-radius: 7px; font-size: 12px; font-weight: 700; flex: 0 0 auto; }
 .role.dealer { background: var(--gold); color: var(--gold-ink); }
 .role.friend { background: rgba(224,176,82,.15); border: 1.5px solid var(--gold); color: var(--gold); }
@@ -255,7 +255,7 @@ b { font-weight: 700; }
 .points-cards .card.dim::after { content: ''; position: absolute; inset: 0; background: rgba(30,48,40,.58); border-radius: inherit; }
 .host-menu { padding: 4px 8px; }
 .felt-ring { top: 6%; bottom: 8%; left: 9%; right: 9%; }
-.badge { padding: 4px 8px; min-width: 0; grid-template-columns: auto auto; column-gap: 6px; row-gap: 0; }
+.badge { padding: 4px 8px 4px 6px; min-width: 0; grid-template-columns: auto auto; column-gap: 8px; row-gap: 0; }
 .badge .role { width: 22px; height: 22px; font-size: 13px; border-radius: 6px; }
 .badge .b-name { font-size: 14px; max-width: 100px; }
 .badge .b-meta { font-size: 12px; gap: 5px; }
@@ -266,15 +266,15 @@ b { font-weight: 700; }
 .me { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; column-gap: 10px; row-gap: 2px;
   padding: 3px 8px calc(4px + env(safe-area-inset-bottom)); padding-left: calc(8px + env(safe-area-inset-left)); padding-right: calc(8px + env(safe-area-inset-right)); }
 .me-head { grid-column: 1; grid-row: 1; min-height: 20px; font-size: 14px; }
-.hand { grid-column: 1; grid-row: 2; --w: 62px; padding: 12px 4px 2px; gap: 6px; }
+.hand { grid-column: 1; grid-row: 2; --w: 68px; padding: 12px 4px 2px; gap: 6px; }
 .hand .card.selected { transform: translateY(-12px); }
 .actions { grid-column: 2; grid-row: 1 / span 2; flex-direction: column; justify-content: flex-end; align-items: stretch; gap: 6px; }
 .actions .primary { min-width: 112px; padding: 10px 14px; font-size: 15px; }
 .actions .ghost { padding: 8px 14px; font-size: 14px; }
-.card.small { --w: 42px; width: 42px; height: 58px; }
-.card.small .corner .rank { font-size: 14px; }
-.card.small .corner .suit { font-size: 12px; }
-.play .card-row.small .card { margin-right: -16px; }
+.card.small { --w: 48px; width: 48px; height: 67px; }
+.card.small .corner .rank { font-size: 16px; }
+.card.small .corner .suit { font-size: 13px; }
+.play .card-row.small .card { margin-right: -18px; }
 .sheet { max-height: 96dvh; padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); gap: 6px; }
 .sheet-title { font-size: 16px; }
 
@@ -286,13 +286,13 @@ b { font-weight: 700; }
   .badge .b-meta { font-size: 13px; }
   .badge .role { width: 26px; height: 26px; font-size: 14px; }
   .status { font-size: 18px; padding: 7px 16px; }
-  .hand { --w: 86px; padding: 20px 8px 4px; }
+  .hand { --w: 96px; padding: 20px 8px 4px; }
   .hand .card.selected { transform: translateY(-16px); }
   .card .corner .rank { font-size: 19px; }
   .card .pip { font-size: 34px; }
-  .card.small { --w: 52px; width: 52px; height: 72px; }
-  .card.small .corner .rank { font-size: 17px; }
-  .card.small .corner .suit { font-size: 14px; }
+  .card.small { --w: 60px; width: 60px; height: 84px; }
+  .card.small .corner .rank { font-size: 19px; }
+  .card.small .corner .suit { font-size: 15px; }
   .actions .primary { min-width: 140px; padding: 12px 16px; }
   .sheet-title { font-size: 20px; }
 }

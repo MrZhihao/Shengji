@@ -17,9 +17,9 @@ const CN_NTH = ['一', '二', '三'];
 interface Pos { x: number; y: number }
 /** 对手座位在牌桌上的位置（百分比）。牌桌只按横屏设计：出牌逆时针，下家在我的右手边，依次绕到左手边 */
 const SEAT_POS: Record<number, Pos[]> = {
-  3: [{ x: 89, y: 50 }, { x: 50, y: 10 }, { x: 11, y: 50 }],
-  4: [{ x: 89, y: 58 }, { x: 68, y: 12 }, { x: 32, y: 12 }, { x: 11, y: 58 }],
-  5: [{ x: 90, y: 62 }, { x: 74, y: 12 }, { x: 50, y: 9 }, { x: 26, y: 12 }, { x: 10, y: 62 }],
+  3: [{ x: 89, y: 50 }, { x: 50, y: 11 }, { x: 11, y: 50 }],
+  4: [{ x: 89, y: 60 }, { x: 67, y: 12 }, { x: 33, y: 12 }, { x: 11, y: 60 }],
+  5: [{ x: 90, y: 64 }, { x: 73, y: 12 }, { x: 50, y: 10 }, { x: 27, y: 12 }, { x: 10, y: 64 }],
 };
 const ME_POS: Pos = { x: 50, y: 104 };
 const CENTER: Pos = { x: 50, y: 56 };
@@ -136,7 +136,7 @@ export function Table({ client }: { client: GameClient }) {
     return { opps, map };
   }, [me, n]);
   const posOf = (s: Seat): Pos => positions.map.get(s) ?? CENTER;
-  const playPosOf = (s: Seat): Pos => (s === me ? { x: 50, y: 82 } : towardCenter(posOf(s), 0.56));
+  const playPosOf = (s: Seat): Pos => (s === me ? { x: 50, y: 83 } : towardCenter(posOf(s), 0.6));
 
   // 手牌变化：清理失效选择，标记新发到的牌
   const newIds = useMemo(() => {
@@ -319,7 +319,7 @@ export function Table({ client }: { client: GameClient }) {
           const isTurn = view.currentTurn === seat;
           return (
             <div key={seat} className={`badge ${isTurn ? 'turn' : ''} ${role.cls}`} style={pct(posOf(seat))}>
-              <span className="b-avatar"><Avatar name={name(seat)} isBot={Boolean(s?.isBot)} size={30} /><span className={`role role-dot ${role.cls}`}>{role.text}</span></span>
+              <span className="b-avatar"><Avatar name={name(seat)} isBot={Boolean(s?.isBot)} size={40} /><span className={`role role-dot ${role.cls}`}>{role.text}</span></span>
               <span className="b-name">{name(seat)}</span>
               <span className="b-meta">
                 <span className="b-level">{rankName(levelRank(view.levels[seat] ?? 0))}</span>
