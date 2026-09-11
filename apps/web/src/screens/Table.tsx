@@ -36,10 +36,17 @@ function declarable(view: PlayerView, selected: readonly Card[]): boolean {
   if (selected.length < 1 || selected.length > 3) return false;
   const first = selected[0] as Card;
   const allJokers = selected.every((c) => c.suit === 'J');
-  const mixedTriple = allJokers && selected.length === 3; // 三张王可以混
+  const mixedTriple = allJokers && selected.length === 3 && view.config.decks >= 3; // 三副牌里三张王可以混
   if (!mixedTriple && !selected.every((c) => identityKey(c) === identityKey(first))) return false;
   if (first.suit === 'J' ? selected.length < 2 : first.rank !== view.level) return false;
-  return selected.length > (view.declaration?.count ?? 0);
+  const current = view.declaration?.count ?? 0;
+  if (selected.length > current) return true;
+  // 四人升级：同张数时一对王盖一对级牌，一对大王盖一对小王
+  if (view.config.allowEqualCountOverride && selected.length === current && view.declaration) {
+    const kind = (c: Card) => (c.suit !== 'J' ? 0 : c.rank === 16 ? 2 : 1);
+    return kind(first) > kind(view.declaration.cards[0] as Card);
+  }
+  return false;
 }
 
 interface DeclareOption { cards: Card[]; label: string }
@@ -53,16 +60,19 @@ function declarationOptions(view: PlayerView): DeclareOption[] {
     if (c.suit === 'J' || c.rank === view.level) groups.set(identityKey(c), [...(groups.get(identityKey(c)) ?? []), c]);
   }
   const out: DeclareOption[] = [];
+  const kind = (c: Card) => (c.suit !== 'J' ? 0 : c.rank === 16 ? 2 : 1);
+  const currentKind = view.declaration ? kind(view.declaration.cards[0] as Card) : -1;
   for (const cards of groups.values()) {
     const first = cards[0] as Card;
     const min = first.suit === 'J' ? 2 : 1;
-    for (let n = Math.max(min, current + 1); n <= Math.min(3, cards.length); n++) {
+    const from = view.config.allowEqualCountOverride && current >= min && kind(first) > currentKind ? current : current + 1;
+    for (let n = Math.max(min, from); n <= Math.min(3, cards.length); n++) {
       const name = first.suit === 'J' ? (first.rank === 16 ? '大王' : '小王') : `${GLYPH[first.suit]}${rankName(first.rank)}`;
       out.push({ cards: cards.slice(0, n), label: n === 1 ? `亮 ${name}` : `亮 ${name} × ${n}` });
     }
   }
   const jokers = view.hand.filter((c) => c.suit === 'J');
-  if (jokers.length >= 3 && current < 3 && !out.some((o) => o.cards.length === 3 && o.cards[0]?.suit === 'J')) {
+  if (view.config.decks >= 3 && jokers.length >= 3 && current < 3 && !out.some((o) => o.cards.length === 3 && o.cards[0]?.suit === 'J')) {
     out.push({ cards: jokers.slice(0, 3), label: '亮 三张王' });
   }
   return out;
@@ -146,10 +156,16 @@ export function Table({ client }: { client: GameClient }) {
       switch (e.type) {
         case 'cardsPlayed': if (e.seat !== me) sound.tick(); break;
         case 'cardDealt': if (e.seat === me) sound.tick(); break;
-        case 'trickWon': texts.push(`${name(e.winner)} 收了这墩${e.points ? `，${e.points} 分` : ''}`); sound.win(); break;
+        case 'trickWon': {
+          texts.push(`${name(e.winner)} 收了这墩${e.points ? `，${e.points} 分` : ''}`);
+          // 已确认的闲家拿到分：鼓掌
+          if (e.points > 0 && view.knownOpponents.includes(e.winner)) sound.applause();
+          else sound.win();
+          break;
+        }
         case 'friendRevealed': texts.push(e.seat === view.dealer ? '庄家自己打出了朋友牌' : `${name(e.seat)} 是庄家的朋友`); sound.friend(); break;
         case 'throwFailed': texts.push(`${name(e.seat)} 甩牌失败，罚 ${e.penalty} 分`); sound.error(); break;
-        case 'declared': texts.push(`${name(e.seat)} 亮 ${e.count} 张${e.suit ? GLYPH[e.suit] : '王'}`); break;
+        case 'declared': texts.push(`${name(e.seat)} 亮 ${e.count} 张${e.suit ? GLYPH[e.suit] : '王'}`); sound.bark(); break;
         case 'declaringClosed': if (e.byBottom) texts.push(`无人亮主，翻底牌定${suitName(e.trumpSuit)}`); break;
         case 'redeal': texts.push('无人亮主，重新发牌'); break;
         case 'roundRestarted': texts.push('房主重发了本局'); break;
@@ -252,7 +268,7 @@ export function Table({ client }: { client: GameClient }) {
         <span className="tb-item">第 {view.round} 局</span>
         <span className="tb-item">级 <b>{rankName(view.level)}</b></span>
         <span className="tb-item">主 <b className={view.trumpSuit === 'H' || view.trumpSuit === 'D' ? 'red' : ''}>{view.trumpDecided ? suitName(view.trumpSuit) : '未定'}</b></span>
-        <span className="tb-item">闲家 <b>{view.visibleOpponentPoints}</b></span>
+        <span className="tb-item">闲家 <b>{view.visibleOpponentPoints}</b>{view.pendingPoints > 0 && <span className="pending"> 待定 {view.pendingPoints}</span>}</span>
         <span className="tb-item">底 {view.bottomCount}{view.phase === 'dealing' ? ` · 剩 ${view.deckRemaining}` : ''}</span>
         <button className="tb-btn" onClick={() => setSoundOn(sound.toggle())} aria-label="音效">{soundOn ? '🔊' : '🔇'}</button>
         <button className="tb-btn" onClick={() => setMenuOpen((v) => !v)} aria-label="菜单">⋯</button>
@@ -283,6 +299,16 @@ export function Table({ client }: { client: GameClient }) {
         </div>
       )}
       {view.friendCalls.length > 0 && <div className="friends-line">朋友牌：{friendText.join('　')}</div>}
+      {(view.opponentPointCards.length > 0 || view.pendingPointCards.length > 0) && (
+        <div className="points-line">
+          <span className="points-label">闲家分牌</span>
+          <div className="points-cards">
+            {view.opponentPointCards.map((c) => <CardView key={c.id} card={c} small />)}
+            {view.pendingPointCards.map((c) => <CardView key={c.id} card={c} small dim />)}
+          </div>
+          {view.pendingPointCards.length > 0 && <span className="points-note">变暗的是身份未定的人抓的</span>}
+        </div>
+      )}
 
       <section className="felt">
         <div className="felt-ring" />

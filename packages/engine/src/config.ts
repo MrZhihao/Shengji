@@ -46,7 +46,8 @@ export function defaultConfig(players: PlayerCount): GameConfig {
       levelStep: 40,
       throwPenaltyPerCard: 10,
       bottomMultiplier: { single: 2, pair: 4, triple: 8, tractor: 8 },
-      allowEqualCountOverride: false,
+      // 四人升级：一对王可以盖一对级牌，一对大王盖一对小王
+      allowEqualCountOverride: true,
       dealerCountsForFriend: true,
       redealIfNoDeclarerFirstRound: true,
     };

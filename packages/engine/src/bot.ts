@@ -29,14 +29,19 @@ export function possibleDeclarations(s: GameState, seat: Seat): Card[][] {
     }
   }
   const current = s.declaration?.count ?? 0;
+  const kindRank = (c: Card) => (c.suit !== 'J' ? 0 : c.rank === 16 ? 2 : 1);
+  const currentKind = s.declaration ? kindRank(s.declaration.cards[0] as Card) : -1;
   const out: Card[][] = [];
   for (const cards of groups.values()) {
-    const min = (cards[0] as Card).suit === 'J' ? 2 : 1;
-    for (let n = Math.max(min, current + 1); n <= cards.length; n++) out.push(cards.slice(0, n));
+    const first = cards[0] as Card;
+    const min = first.suit === 'J' ? 2 : 1;
+    // 同张数盖牌（四人升级）：一对王盖一对级牌，一对大王盖一对小王
+    const from = s.config.allowEqualCountOverride && current >= min && kindRank(first) > currentKind ? current : current + 1;
+    for (let n = Math.max(min, from); n <= Math.min(3, cards.length); n++) out.push(cards.slice(0, n));
   }
-  // 三张王可以大小混着亮
+  // 三副牌里三张王可以大小混着亮
   const jokers = hand.filter((c) => c.suit === 'J');
-  if (jokers.length >= 3 && current < 3 && !out.some((o) => o.length === 3 && (o[0] as Card).suit === 'J')) {
+  if (s.config.decks >= 3 && jokers.length >= 3 && current < 3 && !out.some((o) => o.length === 3 && (o[0] as Card).suit === 'J')) {
     out.push(jokers.slice(0, 3));
   }
   return out;

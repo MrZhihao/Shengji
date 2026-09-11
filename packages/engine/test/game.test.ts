@@ -240,6 +240,25 @@ describe('四人对家模式', () => {
     expect([...v.knownOpponents].sort()).toEqual([(seat + 1) % 4, (seat + 3) % 4].sort());
   });
 
+  it('四人升级：不能三张亮主，一对王能盖一对级牌，一对大王能盖一对小王', () => {
+    let s = dealAll(createGame(defaultConfig(4), 'p4-declare'));
+    const levelSeat = s.hands.findIndex((h) => h.filter((c) => c.rank === 5 && c.suit === 'S').length >= 2);
+    const jokerSeat = s.hands.findIndex((h, i) => i !== levelSeat && h.filter((c) => c.rank === 15).length >= 2);
+    if (levelSeat < 0 || jokerSeat < 0) return;
+    const pair = s.hands[levelSeat]!.filter((c) => c.rank === 5 && c.suit === 'S').slice(0, 2);
+    s = must(applyAction(s, { type: 'declare', seat: levelSeat, cards: pair.map((c) => c.id) }));
+    const smalls = s.hands[jokerSeat]!.filter((c) => c.rank === 15).slice(0, 2);
+    s = must(applyAction(s, { type: 'declare', seat: jokerSeat, cards: smalls.map((c) => c.id) }));
+    expect(s.trumpSuit).toBeNull();
+    expect(s.declaration?.count).toBe(2);
+    // 三张王混着亮在两副牌里不允许
+    const threeJ = s.hands.findIndex((h) => h.filter((c) => c.suit === 'J').length >= 3);
+    if (threeJ >= 0) {
+      const js = s.hands[threeJ]!.filter((c) => c.suit === 'J').slice(0, 3);
+      expect(applyAction(s, { type: 'declare', seat: threeJ, cards: js.map((c) => c.id) }).ok).toBe(false);
+    }
+  });
+
   it('守庄换对家坐庄，下庄换下家；两人共用等级', () => {
     let checked = 0;
     simulateGame(defaultConfig(4), 'p4-dealer', {
@@ -254,5 +273,35 @@ describe('四人对家模式', () => {
       },
     });
     expect(checked).toBeGreaterThan(0);
+  });
+});
+
+describe('闲家得分的显示口径', () => {
+  it('朋友未全部现身时，身份未定者抓的分记为待定；对家模式全部立即计入', () => {
+    let seen = false;
+    simulateGame(defaultConfig(6), 'pending-pts', {
+      maxRounds: 2,
+      onEvent: (_e, s) => {
+        if (s.phase !== 'playing') return;
+        const v = viewFor(s, 0);
+        const team = v.dealerTeam;
+        let confirmed = 0, pending = 0;
+        s.captured.forEach((pts, i) => {
+          if (team.includes(i)) return;
+          if (v.knownOpponents.includes(i)) confirmed += pts; else pending += pts;
+        });
+        expect(v.visibleOpponentPoints).toBe(confirmed);
+        expect(v.pendingPoints).toBe(pending);
+        const cardPts = (cs: readonly { rank: number }[]) => cs.reduce((a, c) => a + (c.rank === 5 ? 5 : c.rank === 10 || c.rank === 13 ? 10 : 0), 0);
+        expect(cardPts(v.opponentPointCards)).toBe(confirmed);
+        expect(cardPts(v.pendingPointCards)).toBe(pending);
+        if (pending > 0) seen = true;
+      },
+    });
+    expect(seen).toBe(true);
+    simulateGame(defaultConfig(4), 'pending-p4', {
+      maxRounds: 1,
+      onEvent: (_e, s) => { if (s.phase === 'playing') expect(viewFor(s, 0).pendingPoints).toBe(0); },
+    });
   });
 });

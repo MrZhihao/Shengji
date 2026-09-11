@@ -158,7 +158,7 @@ function declare(s: GameState, seat: Seat, ids: readonly string[]): ApplyResult 
   if (cards.length > 3) return fail('INVALID_DECLARATION', '最多亮三张');
   const allJokers = cards.every((c) => c.suit === 'J');
   // 三张王不论大小王混不混都可以亮；其余情况必须是同一张牌的多张
-  const mixedTripleJokers = allJokers && cards.length === 3;
+  const mixedTripleJokers = allJokers && cards.length === 3 && s.config.decks >= 3;
   if (!mixedTripleJokers && !cards.every((c) => identityKey(c) === identityKey(first))) {
     return fail('INVALID_DECLARATION', '亮主的牌必须是同一张牌的多张，三张王可以混');
   }

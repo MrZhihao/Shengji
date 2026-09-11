@@ -1,5 +1,5 @@
 /** 每个座位能看到的信息。服务端只把 PlayerView 发给客户端。 */
-import type { Card, Suit } from './cards.ts';
+import { cardPoints, type Card, type Suit } from './cards.ts';
 import type { GameConfig } from './config.ts';
 import type { LevelIndex } from './levels.ts';
 import { currentTurn, dealerTeam } from './reducer.ts';
@@ -32,8 +32,14 @@ export interface PlayerView {
   readonly lastTrick: TrickRecord | null;
   readonly trickNo: number;
   readonly captured: readonly number[];
-  /** 当前可见的闲家得分：不在已知庄家阵营的人抓的分 */
+  /** 已确认的闲家抓到的分；身份未定的人抓的分暂不计入 */
   readonly visibleOpponentPoints: number;
+  /** 身份未定的人抓到的分，等朋友全部现身后再归入闲家或庄家 */
+  readonly pendingPoints: number;
+  /** 已确认闲家抓到的分牌 */
+  readonly opponentPointCards: readonly Card[];
+  /** 身份未定的人抓到的分牌 */
+  readonly pendingPointCards: readonly Card[];
   readonly penalties: readonly number[];
   readonly currentTurn: Seat | null;
   readonly lastRound: RoundResult | null;
@@ -49,7 +55,20 @@ export function viewFor(s: GameState, seat: Seat): PlayerView {
     for (let i = 0; i < s.config.players; i++) if (!team.includes(i)) knownOpponents.push(i);
   }
   let visibleOpponentPoints = 0;
-  for (let i = 0; i < s.config.players; i++) if (!team.includes(i)) visibleOpponentPoints += s.captured[i] as number;
+  let pendingPoints = 0;
+  const opponentSet = new Set(knownOpponents);
+  for (let i = 0; i < s.config.players; i++) {
+    if (team.includes(i)) continue;
+    if (opponentSet.has(i)) visibleOpponentPoints += s.captured[i] as number;
+    else pendingPoints += s.captured[i] as number;
+  }
+  const opponentPointCards: Card[] = [];
+  const pendingPointCards: Card[] = [];
+  for (const t of s.tricks) {
+    if (team.includes(t.winner)) continue;
+    const target = opponentSet.has(t.winner) ? opponentPointCards : pendingPointCards;
+    for (const p of t.plays) for (const c of p.cards) if (cardPoints(c) > 0) target.push(c);
+  }
   const showBottom = (s.phase === 'bottom' && seat === s.dealer) || s.phase === 'roundEnd' || s.phase === 'gameOver';
   return {
     seat,
@@ -75,6 +94,9 @@ export function viewFor(s: GameState, seat: Seat): PlayerView {
     trickNo: s.tricks.length + 1,
     captured: s.captured,
     visibleOpponentPoints,
+    pendingPoints,
+    opponentPointCards,
+    pendingPointCards,
     penalties: s.penalties,
     currentTurn: currentTurn(s),
     lastRound: s.lastRound,
