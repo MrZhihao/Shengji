@@ -16,11 +16,11 @@ const CN_NTH = ['一', '二', '三'];
 interface Pos { x: number; y: number }
 /** 对手座位在牌桌上的位置（百分比）。牌桌只按横屏设计：出牌逆时针，下家在我的右手边，依次绕到左手边 */
 const SEAT_POS: Record<number, Pos[]> = {
-  4: [{ x: 89, y: 56 }, { x: 70, y: 14 }, { x: 30, y: 14 }, { x: 11, y: 56 }],
-  5: [{ x: 90, y: 60 }, { x: 75, y: 14 }, { x: 50, y: 10 }, { x: 25, y: 14 }, { x: 10, y: 60 }],
+  4: [{ x: 89, y: 58 }, { x: 68, y: 12 }, { x: 32, y: 12 }, { x: 11, y: 58 }],
+  5: [{ x: 90, y: 62 }, { x: 74, y: 12 }, { x: 50, y: 9 }, { x: 26, y: 12 }, { x: 10, y: 62 }],
 };
 const ME_POS: Pos = { x: 50, y: 104 };
-const CENTER: Pos = { x: 50, y: 52 };
+const CENTER: Pos = { x: 50, y: 56 };
 const towardCenter = (p: Pos, t: number): Pos => ({ x: p.x + (CENTER.x - p.x) * t, y: p.y + (CENTER.y - p.y) * t });
 
 function roleOf(view: PlayerView, seat: Seat): { text: string; cls: string } {
@@ -98,7 +98,7 @@ export function Table({ client }: { client: GameClient }) {
     return { opps, map };
   }, [me, n]);
   const posOf = (s: Seat): Pos => positions.map.get(s) ?? CENTER;
-  const playPosOf = (s: Seat): Pos => (s === me ? { x: 50, y: 80 } : towardCenter(posOf(s), 0.5));
+  const playPosOf = (s: Seat): Pos => (s === me ? { x: 50, y: 82 } : towardCenter(posOf(s), 0.56));
 
   // 手牌变化：清理失效选择，标记新发到的牌
   const newIds = useMemo(() => {
