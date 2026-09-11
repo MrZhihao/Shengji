@@ -622,6 +622,11 @@ function leadCandidates(s: GameState, seat: Seat, sides: Sides, unseen: Map<stri
           else if (pts === 0 && trumpCount >= 7) score += 18 + early * 3;
         }
       }
+      // 握着朋友牌且轮到自己首出：领出朋友牌本身（通常是稳赢的 A）就能亮身份，尽早
+      if (f.lead && seat !== s.dealer && sides.likelyDealerSide
+        && s.friendCalls.some((c) => c.resolvedSeat === null && comp.cards.some((x) => x.suit === c.suit && x.rank === c.rank))) {
+        score += 30 + Math.max(0, 10 - s.tricks.length) * 2;
+      }
       // 连对拖拉机要早出，免得被别人领一对拆散
       if (f.lead && comp.kind === 'tractor' && s.tricks.length < 10) score += 16 + Math.max(0, 6 - s.tricks.length) * 2;
       // 领小主让队友接管：阵营已明、自己没有稳赢的牌、手里有小主时，用小主把上手权交给队友的大主
@@ -735,16 +740,10 @@ function evaluateFollow(s: GameState, seat: Seat, sides: Sides, cards: Card[], f
     const secure = remaining === 0 || (unseen !== null && winnerSecure(s, seat, plays, winnerIdx, unseen));
     // 握着朋友牌的人：打出朋友牌就亮明身份，之后全队能配合，越早越值。
     // 叫的是「第一张 A」时，庄家引牌让 A 收墩就是在找朋友，别把 A 攥着。
-    if (sides.likelyDealerSide && seat !== s.dealer) {
-      const reveals = s.friendCalls.some((c) => c.resolvedSeat === null && cards.some((x) => x.suit === c.suit && x.rank === c.rank));
-      if (reveals && weWin && winner === seat) {
-        // 牌力越强越不急着现身：主牌很多时先隐藏，让闲家互相猜忌，晚些再亮身份
-        const ctx2 = ctxOf(s);
-        const myTrumps = hand.filter((c) => groupOf(c, ctx2) === 'T').length;
-        const hide = Math.min(1, Math.max(0, (myTrumps - 6) / 6));
-        score += (3 + Math.max(0, 8 - s.tricks.length) * 0.4) * (1 - hide);
-      }
-    }
+    // 能当庄家的朋友就尽早当：打出朋友牌收墩，越早越好，哪怕是盖过正在赢的庄家
+    const revealCard = sides.likelyDealerSide && seat !== s.dealer
+      && s.friendCalls.some((c) => c.resolvedSeat === null && cards.some((x) => x.suit === c.suit && x.rank === c.rank));
+    if (revealCard && weWin && winner === seat) score += 6 + Math.max(0, 10 - s.tricks.length) * 0.6;
     if (weWin) {
       // 不稳的赢墩上送分要打折，自己赢比队友赢略保守
       const factor = secure ? 1 : winner === seat ? 0.55 : 0.7;
@@ -756,8 +755,8 @@ function evaluateFollow(s: GameState, seat: Seat, sides: Sides, cards: Card[], f
         for (const c of cards) mine += cardPoints(c);
         score += mine * 0.6;
       }
-      // 配合：队友本来就在赢，自己再用更大的牌抢过来没有意义，除非是把不稳变稳
-      if (winner === seat && plays.length >= 2) {
+      // 配合：队友本来就在赢，自己再用更大的牌抢过来没有意义，除非是把不稳变稳，或者是用朋友牌亮身份
+      if (winner === seat && plays.length >= 2 && !revealCard) {
         const before = trickWinner(plays.slice(0, -1), trick.lead!, ctx);
         const prevWinner = (plays[before] as TrickPlay).seat;
         if (sides.mates.has(prevWinner) && prevWinner !== seat && !secure) score -= 4;
