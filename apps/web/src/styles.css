@@ -123,7 +123,8 @@ b { font-weight: 700; }
   /* 让 n 张牌刚好铺满一排：负外边距按容器宽度算，牌少时留 4px 间隙 */
   margin-right: min(4px, calc(-1 * (var(--w) - (100% - var(--w)) / max(var(--n) - 1, 1)))); }
 .hand-row .card:last-child { margin-right: 0; }
-.hand .card.selected { transform: translateY(-16px); z-index: 1; }
+/* 选中只抬高，不改层级：抬起的牌不会盖住右边那张牌的角标 */
+.hand .card.selected { transform: translateY(-16px); }
 /* 不能出的牌：不用透明度（重叠的牌会互相透出来），而是压一层不透明的暗色蒙版并降低饱和度 */
 .hand .card.dim { filter: saturate(.25); }
 .hand .card.dim::after { content: ''; position: absolute; inset: 0; background: rgba(30, 48, 40, .58); border-radius: inherit; pointer-events: none; }
@@ -249,7 +250,7 @@ b { font-weight: 700; }
   padding: 3px 8px calc(4px + env(safe-area-inset-bottom)); padding-left: calc(8px + env(safe-area-inset-left)); padding-right: calc(8px + env(safe-area-inset-right)); }
 .me-head { grid-column: 1; grid-row: 1; min-height: 20px; font-size: 14px; }
 .hand { grid-column: 1; grid-row: 2; --w: 62px; padding: 12px 4px 2px; gap: 6px; }
-.hand .card.selected { transform: translateY(-10px); }
+.hand .card.selected { transform: translateY(-12px); }
 .actions { grid-column: 2; grid-row: 1 / span 2; flex-direction: column; justify-content: flex-end; align-items: stretch; gap: 6px; }
 .actions .primary { min-width: 112px; padding: 10px 14px; font-size: 15px; }
 .actions .ghost { padding: 8px 14px; font-size: 14px; }

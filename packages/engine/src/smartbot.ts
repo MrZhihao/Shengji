@@ -334,8 +334,11 @@ export function planDealer(s: GameState, seat: Seat): DealerPlan {
   interface Option { plans: SuitPlan[]; score: number; dumps: number }
   const options: Option[] = [];
   for (const x of suits) {
-    const one = suitPlan(s, hand, x, k, bottomKnown); // 全部叫在这一门
-    if (one && one.dumps.length <= budget) options.push({ plans: [one], score: one.score, dumps: one.dumps.length });
+    // 没有 A 就不叫第二、三张：一门只叫一张，序号永远是自己持有数加一
+    if (k === 1) {
+      const one = suitPlan(s, hand, x, 1, bottomKnown);
+      if (one && one.dumps.length <= budget) options.push({ plans: [one], score: one.score, dumps: one.dumps.length });
+    }
     if (k === 2) {
       const first = suitPlan(s, hand, x, 1, bottomKnown);
       if (!first) continue;
@@ -352,22 +355,27 @@ export function planDealer(s: GameState, seat: Seat): DealerPlan {
   }
   const v2calls = (callFriendV2(s, seat) as Extract<Action, { type: 'callFriend' }>).calls as FriendCallSpec[];
   if (options.length === 0) {
+    // 两个朋友但垫不出两门：第一门按计划垫，第二个朋友按普通叫法挑另一门
+    if (k === 2) {
+      let bestOne: SuitPlan | null = null;
+      for (const x of suits) {
+        const one = suitPlan(s, hand, x, 1, bottomKnown);
+        if (one && one.dumps.length <= budget && (!bestOne || one.score > bestOne.score)) bestOne = one;
+      }
+      const other = bestOne ? v2calls.find((c) => c.suit !== bestOne!.suit) ?? null : null;
+      if (bestOne && other) {
+        return {
+          calls: [{ suit: bestOne.suit, rank: bestOne.rank, nth: Math.min(s.config.decks, bestOne.held + 1) }, other],
+          keep: new Set(bestOne.keep.map((c) => c.id)),
+          dumps: bestOne.dumps,
+        };
+      }
+    }
     // 垫不干净任何一门：退回第二版的叫法，不刻意垫牌
     return { calls: v2calls, keep: new Set(), dumps: [] };
   }
   options.sort((a, b) => b.score - a.score);
-  let best = options[0] as Option;
-  // 两个朋友：同一门叫第 n、n+1 张时两张 A 常落在同一人手里，只找到一个朋友。
-  // 能垫出第二门就用两门；不能的话，第二个朋友按第二版叫法挑另一门，不再同门叫两张。
-  if (k === 2 && best.plans.length === 1) {
-    const single = best.plans[0] as SuitPlan;
-    const onePlan = suitPlan(s, hand, single.suit, 1, bottomKnown);
-    const other = v2calls.find((c) => c.suit !== single.suit) ?? null;
-    if (onePlan && other) {
-      const calls: FriendCallSpec[] = [{ suit: onePlan.suit, rank: onePlan.rank, nth: Math.min(s.config.decks, onePlan.held + 1) }, other];
-      return { calls, keep: new Set(onePlan.keep.map((c) => c.id)), dumps: onePlan.dumps };
-    }
-  }
+  const best = options[0] as Option;
   const calls: FriendCallSpec[] = [];
   const keep = new Set<string>();
   const dumps: Card[] = [];
@@ -436,6 +444,23 @@ export function smartCallFriend(s: GameState, seat: Seat, _rng: Rng, level: Smar
   return { type: 'callFriend', seat, calls: planDealer(s, seat).calls };
 }
 
+/** 兜底补齐叫法：不同花色、不同点数各试一遍，序号始终是自己持有数加一，绝不叫自己没有的第二张 */
+function fillCalls(s: GameState, hand: readonly Card[], calls: FriendCallSpec[]): void {
+  const key = (c: FriendCallSpec) => `${c.suit}${c.rank}#${c.nth}`;
+  for (const suit of SUITS) {
+    if (calls.length >= s.config.friendCount) break;
+    if (suit === s.trumpSuit) continue;
+    for (const rank of [14, 13, 12, 11]) {
+      if (calls.length >= s.config.friendCount) break;
+      if (rank === s.level) continue;
+      const mine = hand.filter((c) => c.suit === suit && c.rank === rank).length;
+      if (mine >= s.config.decks) continue;
+      const spec: FriendCallSpec = { suit, rank, nth: mine + 1 };
+      if (!calls.some((c) => key(c) === key(spec))) calls.push(spec);
+    }
+  }
+}
+
 function callFriendV1(s: GameState, seat: Seat): Action {
   const hand = s.hands[seat] ?? [];
   const candidates: { call: FriendCallSpec; score: number }[] = [];
@@ -459,13 +484,7 @@ function callFriendV1(s: GameState, seat: Seat): Action {
     calls.push(cand.call);
     usedSuits.add(cand.call.suit);
   }
-  let nth = 1;
-  while (calls.length < s.config.friendCount) {
-    const base = candidates[0]?.call ?? { suit: SUITS.find((x) => x !== s.trumpSuit) as Suit, rank: s.level === 14 ? 13 : 14, nth: 1 };
-    const spec = { ...base, nth };
-    if (!calls.some((c) => c.suit === spec.suit && c.rank === spec.rank && c.nth === spec.nth)) calls.push(spec);
-    nth++;
-  }
+  fillCalls(s, hand, calls);
   return { type: 'callFriend', seat, calls };
 }
 
@@ -492,7 +511,6 @@ export function rankedFriendCallSets(s: GameState, seat: Seat, maxSets = 6): Fri
       score -= suitLen * 3;
       score -= mine * 12;
       cands.push({ call: { suit, rank, nth: Math.min(s.config.decks, mine + 1) }, score });
-      if (outside >= 2 && mine === 0) cands.push({ call: { suit, rank, nth: 2 }, score: score - 14 });
     }
   }
   cands.sort((a, b) => b.score - a.score);
@@ -539,8 +557,6 @@ function callFriendV2(s: GameState, seat: Seat): Action {
       // 序号：自己没有就叫第一张；自己有 k 张，叫第 k+1 张只是权宜
       const nth = Math.min(s.config.decks, mine + 1);
       cands.push({ call: { suit, rank, nth }, score });
-      // 第二个朋友可以叫同一张的第二张（前提是外面至少两张）
-      if (outside >= 2 && mine === 0) cands.push({ call: { suit, rank, nth: 2 }, score: score - 14 });
     }
   }
   cands.sort((a, b) => b.score - a.score);
@@ -558,13 +574,7 @@ function callFriendV2(s: GameState, seat: Seat): Action {
     if (calls.some((x) => key(x) === key(c.call))) continue;
     calls.push(c.call);
   }
-  let nth = 1;
-  while (calls.length < s.config.friendCount) {
-    const suit = SUITS.find((x) => x !== s.trumpSuit) as Suit;
-    const spec: FriendCallSpec = { suit, rank: s.level === 14 ? 13 : 14, nth };
-    if (!calls.some((c) => key(c) === key(spec))) calls.push(spec);
-    nth++;
-  }
+  fillCalls(s, hand, calls);
   return { type: 'callFriend', seat, calls };
 }
 

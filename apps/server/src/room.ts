@@ -47,6 +47,8 @@ export class Room {
   private dealTimer: NodeJS.Timeout | null = null;
   private graceTimer: NodeJS.Timeout | null = null;
   private botTimer: NodeJS.Timeout | null = null;
+  /** 真人只剩唯一合法出法时自动代出 */
+  private autoTimer: NodeJS.Timeout | null = null;
   private readonly opts: RoomOptions;
   /** 任何需要落盘的变化后调用 */
   onChange: () => void = () => {};
@@ -434,6 +436,7 @@ export class Room {
       case 'callFriend':
       case 'playing':
         this.scheduleBot();
+        this.scheduleAutoPlay();
         break;
       case 'roundEnd':
         // 房主不在座位上时自动开下一局，但没有真人在线就先停着
@@ -515,6 +518,33 @@ export class Room {
     this.apply(action);
   }
 
+  /**
+   * 最后一次出牌自动出：真人跟牌时手里的牌不多于首出张数（只能全出），或首出时只剩一张，
+   * 都没有选择余地，稍等一下就代他出掉，省得再点一次。
+   */
+  private scheduleAutoPlay(): void {
+    if (this.autoTimer || !this.state || this.state.phase !== 'playing') return;
+    const turn = currentTurn(this.state);
+    if (turn === null || this.seats[turn]?.isBot) return;
+    const hand = this.state.hands[turn] ?? [];
+    const trick = this.state.trick;
+    let forced: readonly string[] | null = null;
+    if (trick && trick.plays.length > 0 && trick.lead) {
+      let n = 0;
+      for (const c of trick.lead.components) n += c.cards.length;
+      if (hand.length <= n) forced = hand.map((c) => c.id);
+    } else if (hand.length === 1) {
+      forced = hand.map((c) => c.id);
+    }
+    if (!forced) return;
+    const state = this.state;
+    this.autoTimer = setTimeout(() => {
+      this.autoTimer = null;
+      if (this.state !== state) return;
+      this.apply({ type: 'play', seat: turn, cards: forced as string[] });
+    }, 700);
+  }
+
   private clearTimer(which: 'deal' | 'grace'): void {
     if (which === 'deal' && this.dealTimer) { clearTimeout(this.dealTimer); this.dealTimer = null; }
     if (which === 'grace' && this.graceTimer) { clearTimeout(this.graceTimer); this.graceTimer = null; }
@@ -525,6 +555,7 @@ export class Room {
     this.clearTimer('deal');
     this.clearTimer('grace');
     if (this.botTimer) { clearTimeout(this.botTimer); this.botTimer = null; }
+    if (this.autoTimer) { clearTimeout(this.autoTimer); this.autoTimer = null; }
   }
 }
 
