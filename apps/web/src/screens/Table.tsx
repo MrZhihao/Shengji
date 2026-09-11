@@ -41,6 +41,32 @@ function declarable(view: PlayerView, selected: readonly Card[]): boolean {
   return selected.length > (view.declaration?.count ?? 0);
 }
 
+interface DeclareOption { cards: Card[]; label: string }
+
+/** 发牌阶段手里能亮的组合：级牌 1 到 3 张、同种王 2 到 3 张、任意 3 张王；只列比当前亮主更多张的 */
+function declarationOptions(view: PlayerView): DeclareOption[] {
+  if (view.phase !== 'dealing' && view.phase !== 'declaring') return [];
+  const current = view.declaration?.count ?? 0;
+  const groups = new Map<string, Card[]>();
+  for (const c of view.hand) {
+    if (c.suit === 'J' || c.rank === view.level) groups.set(identityKey(c), [...(groups.get(identityKey(c)) ?? []), c]);
+  }
+  const out: DeclareOption[] = [];
+  for (const cards of groups.values()) {
+    const first = cards[0] as Card;
+    const min = first.suit === 'J' ? 2 : 1;
+    for (let n = Math.max(min, current + 1); n <= Math.min(3, cards.length); n++) {
+      const name = first.suit === 'J' ? (first.rank === 16 ? '大王' : '小王') : `${GLYPH[first.suit]}${rankName(first.rank)}`;
+      out.push({ cards: cards.slice(0, n), label: n === 1 ? `亮 ${name}` : `亮 ${name} × ${n}` });
+    }
+  }
+  const jokers = view.hand.filter((c) => c.suit === 'J');
+  if (jokers.length >= 3 && current < 3 && !out.some((o) => o.cards.length === 3 && o.cards[0]?.suit === 'J')) {
+    out.push({ cards: jokers.slice(0, 3), label: '亮 三张王' });
+  }
+  return out;
+}
+
 function statusText(view: PlayerView, name: (s: Seat) => string): string {
   const me = view.seat;
   switch (view.phase) {
@@ -151,6 +177,16 @@ export function Table({ client }: { client: GameClient }) {
     if (myTurn && !prevTurn.current) sound.turn();
     prevTurn.current = myTurn;
   }, [myTurn]);
+
+  // 自动提示亮主：新出现能亮的组合时响一声，牌面高亮
+  const declareOpts = useMemo(() => declarationOptions(view), [view.hand, view.phase, view.level, view.declaration]);
+  const declarableIds = useMemo(() => new Set(declareOpts.flatMap((o) => o.cards.map((c) => c.id))), [declareOpts]);
+  const prevDeclareKey = useRef('');
+  useEffect(() => {
+    const key = declareOpts.map((o) => o.label).join('|');
+    if (key && key !== prevDeclareKey.current) sound.turn();
+    prevDeclareKey.current = key;
+  }, [declareOpts]);
 
   const selectedCards = useMemo(() => view.hand.filter((c) => selected.includes(c.id)), [view.hand, selected]);
   const toggle = (id: string) => { sound.unlock(); setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id])); };
@@ -288,6 +324,15 @@ export function Table({ client }: { client: GameClient }) {
           {view.declaration && (view.phase === 'dealing' || view.phase === 'declaring') && (
             <div className="declared"><span>{name(view.declaration.seat)} 亮</span><CardRow cards={view.declaration.cards} small /></div>
           )}
+          {declareOpts.length > 0 && (
+            <div className="declare-hints">
+              {declareOpts.map((o) => (
+                <button key={o.label} className="primary small declare-btn" onClick={() => { send({ t: 'declare', cards: o.cards.map((c) => c.id) }); setSelected([]); }}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          )}
           {view.phase === 'callFriend' && view.dealer === me && <FriendCallForm view={view} send={send} />}
         </div>
       </section>
@@ -310,7 +355,7 @@ export function Table({ client }: { client: GameClient }) {
                   card={c}
                   selected={selected.includes(c.id)}
                   dim={dimCard(c)}
-                  className={newIds.has(c.id) ? 'dealt' : ''}
+                  className={`${newIds.has(c.id) ? 'dealt' : ''} ${declarableIds.has(c.id) ? 'declarable' : ''}`}
                   onClick={() => toggle(c.id)}
                 />
               ))}
