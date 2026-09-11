@@ -230,8 +230,8 @@ export const smartTuning = {
   voidCallPenalty: 0,
   /** 1：叫朋友按庄家计划；0：用第二版原来的叫法（实验开关） */
   planCalls: 1,
-  /** 庄家开局主动用引牌找朋友所需的最少主牌数；很大的值等于关闭 */
-  openingMinTrumps: 8,
+  /** 庄家开局主动用引牌找朋友所需的最少主牌数；0 表示无条件先找队友 */
+  openingMinTrumps: 0,
   declareSingle: 11.5,
   declarePair: 9.5,
   earlyPenalty: 1.5,
@@ -786,7 +786,7 @@ export interface PlayCandidate {
  * 就把最小的一张领出去，把牌权送给握 A 的朋友；朋友现身后会根据庄家的断门把牌传回来让庄家毙。
  */
 export function friendOpening(s: GameState, seat: Seat): Card[] | null {
-  if (seat !== s.dealer || s.tricks.length >= 2) return null;
+  if (seat !== s.dealer || s.tricks.length >= 10) return null;
   if (!s.trick || s.trick.plays.length > 0) return null;
   const ctx = ctxOf(s);
   const hand = s.hands[seat] ?? [];
@@ -804,8 +804,41 @@ export function friendOpening(s: GameState, seat: Seat): Card[] | null {
   return null;
 }
 
+/** 这手牌里是否包含能让某个朋友牌序号凑满、从而让自己成为庄家队友的牌 */
+export function completesFriendCall(s: GameState, seat: Seat, cards: readonly Card[]): boolean {
+  if (seat === s.dealer) return false;
+  for (const call of s.friendCalls) {
+    if (call.resolvedSeat !== null) continue;
+    const mine = cards.filter((c) => c.suit === call.suit && c.rank === call.rank).length;
+    if (mine > 0 && call.played + mine >= call.nth) return true;
+  }
+  return false;
+}
+
+/** 用朋友牌收下这墩（或首出朋友牌）才算「做队友的机会」；把朋友牌垫进别人赢的墩里只是白丢一张 A */
+function friendChance(s: GameState, seat: Seat, cards: readonly Card[]): boolean {
+  if (!completesFriendCall(s, seat, cards)) return false;
+  const trick = s.trick;
+  if (!trick || trick.plays.length === 0 || !trick.lead) return true;
+  const plays: TrickPlay[] = [...trick.plays, { seat, cards }];
+  const w = trickWinner(plays, trick.lead, ctxOf(s));
+  return (plays[w] as TrickPlay).seat === seat;
+}
+
+/** 把「能成为庄家队友」的候选提到最前面，保持它们之间原有的打分顺序 */
+function preferFriendPlays(s: GameState, seat: Seat, cands: PlayCandidate[]): PlayCandidate[] {
+  const friend = cands.filter((c) => friendChance(s, seat, c.cards));
+  if (friend.length === 0) return cands;
+  const rest = cands.filter((c) => !friendChance(s, seat, c.cards));
+  return [...friend.map((c) => ({ ...c, heuristic: 999 + c.heuristic / 1000 })), ...rest];
+}
+
 /** 当前轮到 seat 出牌时的候选出法，按规则打分降序。首出与跟牌都覆盖。 */
 export function candidatePlays(s: GameState, seat: Seat, rng: Rng, level: SmartLevel = 2): PlayCandidate[] {
+  return preferFriendPlays(s, seat, candidatePlaysInner(s, seat, rng, level));
+}
+
+function candidatePlaysInner(s: GameState, seat: Seat, rng: Rng, level: SmartLevel = 2): PlayCandidate[] {
   const f = featuresOf(level);
   const hand = s.hands[seat] ?? [];
   const ctx = ctxOf(s);

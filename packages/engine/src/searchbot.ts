@@ -234,8 +234,9 @@ export function chooseBest(alive: readonly number[], sums: readonly number[], co
 /** 出牌搜索的候选动作与规则打分 */
 export function playCandidates(s: GameState, seat: Seat, rng: Rng, maxCandidates: number): { actions: Action[]; heuristics: number[] } {
   const all = candidatePlays(s, seat, rng, 2);
-  // 庄家开局找朋友是真人的固定打法：不交给推演比较，直接照做
-  const cands = (all[0]?.heuristic ?? 0) >= 999 ? all.slice(0, 1) : all.slice(0, Math.max(1, maxCandidates));
+  // 庄家先找队友、有机会做庄家队友就做：真人的固定打法，不交给推演比较。多个候选都能成为队友时只在它们之间推演
+  const forced = all.filter((c) => c.heuristic >= 999);
+  const cands = forced.length > 0 ? forced.slice(0, Math.max(1, maxCandidates)) : all.slice(0, Math.max(1, maxCandidates));
   return {
     actions: cands.map((c) => ({ type: 'play', seat, cards: c.cards.map((x) => x.id) })),
     heuristics: cands.map((c) => c.heuristic),
