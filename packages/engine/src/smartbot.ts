@@ -796,6 +796,9 @@ export function friendOpening(s: GameState, seat: Seat): Card[] | null {
     if (call.resolvedSeat !== null) continue;
     const callsHere = s.friendCalls.filter((c) => c.suit === call.suit).length;
     const inSuit = hand.filter((c) => c.suit === call.suit && groupOf(c, ctx) !== 'T');
+    // 叫的是第二张、第三张：自己手里的 A 先出掉，把序号往前推；有两张就一对一起出
+    const own = inSuit.filter((c) => c.rank === call.rank);
+    if (own.length > 0) return own.length >= 2 ? own.slice(0, 2) : [own[0] as Card];
     const leads = inSuit.filter((c) => c.rank !== call.rank && ordinal(c, ctx) < ordinal({ ...c, rank: call.rank }, ctx));
     if (leads.length === 0 || leads.length > callsHere) continue;
     leads.sort((a, b) => ordinal(a, ctx) - ordinal(b, ctx));
