@@ -258,7 +258,7 @@ WebSocket，JSON 文本帧，路径 `/ws`。所有消息带 `t` 字段。
 - 回合结束弹结算面板：每墩分、抠底倍数、各人升级、下一局庄家。
 - 电脑横屏把座位改成环形，手牌单行铺开。
 - PWA：vite-plugin-pwa 生成 manifest 与 service worker，静态资源预缓存，WebSocket 不经过 service worker；图标由 `apps/web/scripts/icons.mjs` 用纯 Node 画出 PNG。
-- 音效用 Web Audio 合成，不依赖音频文件：出牌、轮到你、收墩、朋友现身、错误各一种，顶栏可静音。
+- 音效：出牌、轮到你、收墩、朋友现身、错误用 Web Audio 合成；掌声与亮主的狗叫用 Wikimedia Commons 的公有领域与 CC BY-SA 录音，裁剪后放在 `public/sounds`（授权见同目录 `CREDITS.md`），首次触摸后预取解码，加载失败退回合成音。顶栏可静音。
 
 ### 3.6 机器人策略
 

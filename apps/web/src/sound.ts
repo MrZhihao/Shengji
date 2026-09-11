@@ -28,6 +28,38 @@ function tone(freq: number, dur: number, type: OscillatorType = 'sine', gain = 0
   o.stop(t0 + dur + 0.02);
 }
 
+/** 预录音效：第一次用到时下载并解码，之后复用；拿不到就退回合成音 */
+const clips = new Map<string, Promise<AudioBuffer | null>>();
+function loadClip(url: string): Promise<AudioBuffer | null> {
+  const a = ac();
+  if (!a) return Promise.resolve(null);
+  let p = clips.get(url);
+  if (!p) {
+    p = fetch(url).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+      .then((buf) => a.decodeAudioData(buf))
+      .catch(() => null);
+    clips.set(url, p);
+  }
+  return p;
+}
+async function playClip(url: string, gain: number, fallback: () => void): Promise<void> {
+  if (!enabled) return;
+  const a = ac();
+  if (!a) return;
+  const buf = await loadClip(url);
+  if (!buf) { fallback(); return; }
+  const src = a.createBufferSource();
+  src.buffer = buf;
+  const g = a.createGain();
+  g.gain.value = gain;
+  src.connect(g).connect(a.destination);
+  src.start();
+}
+/** 第一次触摸后把两段音效预取并解码，之后触发时不卡 */
+export function preloadSounds(): void {
+  for (const url of ['/sounds/applause.mp3', '/sounds/bark.mp3']) void loadClip(url);
+}
+
 export const sound = {
   get enabled() { return enabled; },
   toggle(): boolean {
@@ -51,7 +83,10 @@ export const sound = {
    * 闲家拿到分：一阵人群掌声。几十下错落的短促噪声爆发，密度先密后疏，
    * 每一下随机带通滤波模拟不同的手掌，再过一层简单混响，听起来像一小群人在拍手。
    */
-  applause(): void {
+  applause(): void { void playClip('/sounds/applause.mp3', 0.9, () => sound.applauseSynth()); },
+  bark(): void { void playClip('/sounds/bark.mp3', 0.8, () => sound.barkSynth()); },
+  /** 合成掌声（录音加载失败时的后备） */
+  applauseSynth(): void {
     if (!enabled) return;
     const a = ac();
     if (!a) return;
@@ -98,8 +133,8 @@ export const sound = {
       src.start(now + t);
     }
   },
-  /** 亮主、反主：两声狗叫。锯齿波做声带，音高由高滑低，带一点噪声和低通，模拟「汪汪」 */
-  bark(): void {
+  /** 合成狗叫（录音加载失败时的后备） */
+  barkSynth(): void {
     if (!enabled) return;
     const a = ac();
     if (!a) return;
