@@ -1,6 +1,6 @@
 /** 一个房间：大厅座位管理 + 驾驭引擎状态机 + 机器人 + 广播。 */
 import {
-  applyAction, createGame, createRng, currentTurn, defaultConfig, restartRound, smartAction, smartDeclare, viewFor,
+  applyAction, createGame, createRng, currentTurn, defaultConfig, restartRound, smartAction, smartDeclare, tuneForMode, viewFor,
   type Action, type GameConfig, type GameEvent, type GameState, type Rng, type Seat,
 } from '@shengji/engine';
 import type { RoomInfo, RoomSummary, RoundReplay, ServerMessage } from '@shengji/protocol';
@@ -511,7 +511,7 @@ export class Room {
     if (!state) return;
     const epoch = ++this.searchEpoch;
     const pool = getSearchPool();
-    const opts = { timeBudgetMs: this.opts.searchBudgetMs, minSamples: 2, maxSamples: 120, maxCandidates: 8 };
+    const opts = tuneForMode(state, { timeBudgetMs: this.opts.searchBudgetMs, minSamples: 2, maxSamples: 120, maxCandidates: 8 });
     let action: Action;
     if (state.phase === 'bottom' || state.phase === 'callFriend') {
       // 扣底、叫朋友一局只做一次，预算给多一点

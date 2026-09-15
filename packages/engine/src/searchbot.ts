@@ -11,7 +11,7 @@ import { candidatePlays, knownVoids, rankedBottomSets, rankedFriendCallSets, sma
 import type { FriendCallSpec } from './state.ts';
 import type { Action, GameState, Seat } from './state.ts';
 import { groupOf, type Group } from './trump.ts';
-import { EXACT_MAX_CARDS, exactValueAfterPlay, terminalUtility } from './endgame.ts';
+import { exactMaxCards, exactValueAfterPlay, terminalUtility } from './endgame.ts';
 
 // 引擎不依赖 DOM 或 Node 类型，这里只声明用到的两个全局
 declare const setTimeout: (fn: () => void, ms: number) => unknown;
@@ -26,7 +26,26 @@ export interface SearchOptions {
   readonly maxCandidates: number;
 }
 
+/** 采样先验的参数，模拟器可用 --tune 改动做 A/B */
+export const searchTuning = {
+  /** 1 开 0 关 */
+  priors: 1,
+  /** 实测（对真实暗牌的主牌数误差）：无先验 1.01 张，这组 0.85 张 */
+  dealerTrumpPrior: 3.0,
+  declarerTrumpPrior: 1.6,
+  trumpLeaderPrior: 2.5,
+};
+
 export const defaultSearchOptions: SearchOptions = { timeBudgetMs: 600, minSamples: 4, maxSamples: 48, maxCandidates: 10 };
+
+/**
+ * 四人对家模式的推演更短、阵营全知，同样时间能多跑采样，候选也放宽；
+ * 五六人沿用传入的参数。服务端按时间预算搜索时用；模拟器按固定采样数对比时不用，保证公平。
+ */
+export function tuneForMode(s: GameState, opts: SearchOptions): SearchOptions {
+  if (s.config.players !== 4) return opts;
+  return { ...opts, maxSamples: Math.round(opts.maxSamples * 1.5), maxCandidates: Math.max(opts.maxCandidates, 12) };
+}
 
 export interface SearchResult {
   readonly action: Action;
@@ -78,6 +97,19 @@ export function sampleDeterminization(s: GameState, seat: Seat, rng: Rng): Deter
   }
   const bottomCap = bottomKnown ? 0 : s.bottom.length;
 
+  // 四人对家模式：按公开信息给各家加先验权重。庄家扣底留主，主牌偏向庄家；亮主的人主多；
+  // 主动领过主的人主多。权重只改变采样分布，不排除任何可能。
+  const trumpPrior: number[] = Array.from({ length: n }, () => 1);
+  if (s.config.friendCount === 0 && searchTuning.priors > 0) {
+    if (s.dealer !== null && s.dealer !== seat) trumpPrior[s.dealer] = searchTuning.dealerTrumpPrior;
+    if (s.declaration && s.declaration.seat !== seat) trumpPrior[s.declaration.seat] = Math.max(trumpPrior[s.declaration.seat] as number, searchTuning.declarerTrumpPrior);
+    for (const t of s.tricks) {
+      const first = t.plays[0];
+      if (!first || t.leader === seat) continue;
+      if (first.cards.every((c) => groupOf(c, ctx) === 'T')) trumpPrior[t.leader] = Math.max(trumpPrior[t.leader] as number, searchTuning.trumpLeaderPrior);
+    }
+  }
+
   const attempt = (respectVoids: boolean): Determinization | null => {
     const cap = [...capacity];
     let bcap = bottomCap;
@@ -91,20 +123,21 @@ export function sampleDeterminization(s: GameState, seat: Seat, rng: Rng): Deter
     for (const { c, g } of constrained) {
       const eligible: number[] = [];
       let total = 0;
+      const weightOf = (i: number) => cap[i]! * (g === 'T' ? (trumpPrior[i] as number) : 1);
       for (let i = 0; i < n; i++) {
         if (cap[i]! <= 0) continue;
         if (respectVoids && voids.get(i)?.has(g)) continue;
         eligible.push(i);
-        total += cap[i]!;
+        total += weightOf(i);
       }
       let bottomWeight = 0;
       if (bcap > 0) { eligible.push(-1); bottomWeight = bcap * bottomBias(c, g); total += bottomWeight; }
       if (eligible.length === 0) return null;
-      // 按剩余容量加权随机；底牌按「庄家会不会扣这张」再加权
+      // 按剩余容量加权随机；主牌再乘各家的先验；底牌按「庄家会不会扣这张」再加权
       let r = rng.next() * total;
       let chosen = eligible[eligible.length - 1] as number;
       for (const i of eligible) {
-        const w = i === -1 ? bottomWeight : cap[i]!;
+        const w = i === -1 ? bottomWeight : weightOf(i);
         if (r < w) { chosen = i; break; }
         r -= w;
       }
@@ -142,7 +175,7 @@ function voidCount(voids: Map<Seat, Set<Group>>, g: Group, n: number, me: Seat):
 function rollout(base: GameState, seat: Seat, cards: Card[], det: Determinization, rng: Rng): number | null {
   let s: GameState = { ...base, hands: det.hands, bottom: det.bottom };
   // 残局：能精确算就精确算
-  if ((s.hands[seat]?.length ?? 0) <= EXACT_MAX_CARDS) {
+  if ((s.hands[seat]?.length ?? 0) <= exactMaxCards(s)) {
     const exact = exactValueAfterPlay(s, seat, cards);
     if (exact !== null) return exact;
   }
@@ -170,7 +203,7 @@ function rollout(base: GameState, seat: Seat, cards: Card[], det: Determinizatio
 /** 评估「seat 在确定化局面上执行 action」的收益：出牌残局走精确求解，其余用二版机器人打完 */
 export function evaluateAction(base: GameState, seat: Seat, action: Action, det: Determinization, rng: Rng): number | null {
   const s: GameState = { ...base, hands: det.hands, bottom: det.bottom };
-  if (action.type === 'play' && (s.hands[seat]?.length ?? 0) <= EXACT_MAX_CARDS) {
+  if (action.type === 'play' && (s.hands[seat]?.length ?? 0) <= exactMaxCards(s)) {
     const cards = (s.hands[seat] ?? []).filter((c) => action.cards.includes(c.id));
     const exact = exactValueAfterPlay(s, seat, cards);
     if (exact !== null) return exact;

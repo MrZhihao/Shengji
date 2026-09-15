@@ -24,10 +24,17 @@ export interface SmartFeatures {
   readonly lead: boolean;
   /** 跟牌：稳墩判断、末墩加权 */
   readonly follow: boolean;
+  /** 四人对家模式专用：主牌计数拉主、闲家留对子抢底、庄家留大主保底、对家配合 */
+  readonly partner: boolean;
 }
 
-export const SMART_V1: SmartFeatures = { declare: false, call: false, lead: false, follow: false };
-export const SMART_V2: SmartFeatures = { declare: true, call: true, lead: true, follow: true };
+export const SMART_V1: SmartFeatures = { declare: false, call: false, lead: false, follow: false, partner: false };
+export const SMART_V2: SmartFeatures = { declare: true, call: true, lead: true, follow: true, partner: true };
+
+/** 四人对家模式的专用规则是否生效 */
+function partnerRules(s: GameState, f: SmartFeatures): boolean {
+  return f.partner && smartTuning.partnerRules > 0 && s.config.friendCount === 0;
+}
 
 /** 兼容旧接口：1 是第一版，2 是全部特性 */
 export type SmartLevel = 1 | 2 | SmartFeatures;
@@ -224,6 +231,16 @@ export function trumpStrength(hand: readonly Card[], level: number, suit: Suit |
 
 /** 亮主阈值，可在模拟器里调参 */
 export const smartTuning = {
+  /** 四人对家专用规则总开关（1 开 0 关），A/B 用 */
+  partnerRules: 1,
+  /** 四人：每人剩这么多张以内开始为末墩布局 */
+  prepHand: 9,
+  /** 四人：闲家残局前领出稳赢对子的扣分（留到末墩抢底） */
+  pairHoldPenalty: 45,
+  /** 四人：拉主门槛，自己的主要比外面平均每人多这个倍数 */
+  majorityFactor: 1.15,
+  /** 四人：对手在赢、对家还没出时垫分牌的扣分系数 */
+  holdPointsFactor: 0.5,
   /** 1：扣底按庄家计划垫绝朋友门；0：只用普通扣底打分（实验开关） */
   planDiscards: 1,
   /** 叫缺门（没有引牌）的 A 的扣分；默认 0：缺门就是最短的门，直接叫 */
@@ -598,6 +615,11 @@ function leadCandidates(s: GameState, seat: Seat, sides: Sides, unseen: Map<stri
   const byGroup = new Map<Group, Card[]>();
   for (const c of hand) byGroup.set(groupOf(c, ctx), [...(byGroup.get(groupOf(c, ctx)) ?? []), c]);
   const trumpCount = byGroup.get('T')?.length ?? 0;
+  const partner = partnerRules(s, f);
+  // 四人：残局前几墩（每人还剩 6 到 9 张）是为末墩布局的时候
+  const endgamePrep = partner && hand.length <= smartTuning.prepHand && !lastTrick;
+  // 四人主牌计数：自己的主比外面平均每人多就拉主；闲家也一样，把庄家的主拉光他就毙不了
+  const trumpMajority = partner && trumpCount >= 8 && trumpCount * (s.config.players - 1) > trumpsOutside * smartTuning.majorityFactor;
   const out: LeadCandidate[] = [];
   for (const [g, cards] of byGroup) {
     const d = decompose(cards, ctx);
@@ -609,13 +631,13 @@ function leadCandidates(s: GameState, seat: Seat, sides: Sides, unseen: Map<stri
       let score: number;
       if (isSafe) {
         score = 100 + comp.cards.length * 10 + pts * 2;
-        if (g === 'T' && !sides.likelyDealerSide && trumpCount < 6) score -= 30; // 闲家别急着放主
+        if (g === 'T' && !sides.likelyDealerSide && trumpCount < 6 && !trumpMajority) score -= 30; // 闲家别急着放主
         // 先出短门的强牌，再出长门的，防止被人趁机绝门
         if (g !== 'T') score += Math.max(0, 6 - cards.length);
       } else if (g === 'T') {
         // 庄家阵营主牌够多就拉主，朋友都现身后配合更明确，门槛放低
         const allKnown = s.config.friendCount === 0 || (s.friendCalls.length > 0 && s.friendCalls.every((c) => c.resolvedSeat !== null));
-        const drawTrumps = sides.likelyDealerSide && trumpCount >= (allKnown ? 7 : 8);
+        const drawTrumps = (sides.likelyDealerSide && trumpCount >= (allKnown ? 7 : 8)) || trumpMajority;
         score = (drawTrumps ? 60 : 15) - comp.top - pts * 4 - (comp.cards.length - 1) * 8;
       } else {
         score = 40 - comp.top - pts * 5 + Math.max(0, 8 - cards.length) * 2 - (comp.cards.length - 1) * 6;
@@ -644,6 +666,16 @@ function leadCandidates(s: GameState, seat: Seat, sides: Sides, unseen: Map<stri
       if (f.lead && g === 'T' && comp.kind === 'single' && sides.mates.size > 1 && safe.length === 0 && comp.top <= 5 && trumpsOutside > 0 && !lastTrick) score += 12;
       // 最后几墩：能赢就赢，末墩关系到抠底
       if (lastTrick && isSafe) score += 30;
+      if (endgamePrep) {
+        if (!sides.likelyDealerSide) {
+          // 闲家抢底：底牌 8 张，末墩用对子赢是四倍、拖拉机八倍。稳赢的对子、拖拉机留到最后，先用单张清场
+          if (isSafe && comp.kind !== 'single') score -= smartTuning.pairHoldPenalty;
+          else if (comp.kind === 'single' && g !== 'T') score += 6;
+        } else {
+          // 庄家保底：最大的主留到末墩压闲家的对子，先出别的
+          if (g === 'T' && isSafe && comp.kind === 'single' && comp === safe[0] && safe.length === 1) score -= 20;
+        }
+      }
       if (f.lead && g !== 'T' && trumpsOutside > 0) {
         // 对手已经断门会来毙，尤其别送分；队友断门则可以喂他毙，带分的牌最好
         if (foeVoid(g)) score -= isSafe ? 45 : 10 + pts * 3;
@@ -755,11 +787,14 @@ function evaluateFollow(s: GameState, seat: Seat, sides: Sides, cards: Card[], f
     const revealCard = sides.likelyDealerSide && seat !== s.dealer
       && s.friendCalls.some((c) => c.resolvedSeat === null && cards.some((x) => x.suit === c.suit && x.rank === c.rank));
     if (revealCard && weWin && winner === seat) score += 6 + Math.max(0, 10 - s.tricks.length) * 0.6;
+    const partner = partnerRules(s, f);
     if (weWin) {
       // 不稳的赢墩上送分要打折，自己赢比队友赢略保守
       const factor = secure ? 1 : winner === seat ? 0.55 : 0.7;
       score += pts * factor + (secure ? 4 : 2);
       if (isLastTrick) score += 45; // 末墩：闲家抠底、庄家保底
+      // 四人：轮到我时对家还没出（我是第二家），对家在我后面能兜底，自己不必用大牌硬抢没分的墩
+      if (partner && remaining === 2 && winner === seat && pts === 0 && !secure) score -= 3;
       // 配合：队友稳赢时，把自己手里的分牌喂上去（用分牌而不是留着）
       if (secure && winner !== seat) {
         let mine = 0;
@@ -775,6 +810,18 @@ function evaluateFollow(s: GameState, seat: Seat, sides: Sides, cards: Card[], f
     } else {
       score -= pts + 1;
       if (isLastTrick) score -= 45;
+      // 四人：对手在赢、我后面还有对家（我是第三家或第二家）时，别把分牌垫出去，留给对家可能抢回的墩
+      if (partner && remaining > 0) {
+        let mine = 0;
+        for (const c of cards) mine += cardPoints(c);
+        score -= mine * smartTuning.holdPointsFactor;
+      }
+    }
+    // 四人残局前：闲家跟牌时尽量不拆稳赢的主对子，留到末墩抢底
+    if (partner && !sides.likelyDealerSide && hand.length <= smartTuning.prepHand && !isLastTrick && cards.length === 1) {
+      const c = cards[0] as Card;
+      if (groupOf(c, ctx) === 'T' && hand.filter((h) => identityKey(h) === identityKey(c)).length >= 2
+        && unseen !== null && !beatable({ kind: 'pair', cards: [c, c], top: ordinal(c, ctx), mult: 2, length: 1 } as Component, 'T', unseen, ctx)) score -= 10;
     }
   } else if (weWin) score += pts * (remaining === 0 ? 1 : winner === seat ? 0.7 : 0.85) + 3;
   else score -= pts + 1;

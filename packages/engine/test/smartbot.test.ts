@@ -142,3 +142,65 @@ describe('庄家计划：叫朋友的花色垫到只剩要用的牌', () => {
     expect(checked).toBeGreaterThan(0);
   }, 60_000);
 });
+
+describe('四人对家模式的搜索强化', () => {
+  it('四人残局从每人 5 张起精确求解，出法按身份去重，同一局面复用', async () => {
+    const { legalMoves, exactValueAfterPlay, exactMaxCards } = await import('../src/endgame.ts');
+    const { identityKey } = await import('../src/cards.ts');
+    const rng = createRng('p4-endgame');
+    let s = createGame(defaultConfig(4), 'p4-endgame');
+    expect(exactMaxCards(s)).toBe(5);
+    expect(exactMaxCards(createGame(defaultConfig(6), 'x'))).toBe(3);
+    const step = (a: Parameters<typeof applyAction>[1]) => { const r = applyAction(s, a); if (!r.ok) throw new Error(r.error.message); s = r.state; };
+    while (s.phase === 'dealing') { for (let i = 0; i < 4; i++) { const d = smartDeclare(s, i, rng); if (d) step(d); } step({ type: 'dealCard' }); }
+    step({ type: 'closeDeclaring' });
+    while (s.phase !== 'playing') { const a = smartAction(s, s.dealer!, rng); if (a) step(a); }
+    while (!(s.hands.every((h) => h.length <= 5) && (s.trick?.plays.length ?? 0) === 0)) { const t = currentTurn(s)!; step(smartAction(s, t, rng)!); }
+    const seat = currentTurn(s)!;
+    const moves = legalMoves(s, seat);
+    // 去重：没有两种出法的身份组合相同
+    const keys = moves.map((m) => m.map((c) => identityKey(c)).sort().join(','));
+    expect(new Set(keys).size).toBe(keys.length);
+    let solved = 0;
+    for (const m of moves) {
+      const v = exactValueAfterPlay(s, seat, m, 2_000_000);
+      if (v !== null) { solved++; expect(Number.isFinite(v)).toBe(true); }
+    }
+    expect(solved).toBe(moves.length);
+  }, 120_000);
+
+  it('四人采样先验：主牌偏向庄家，且不排除任何合法分布', async () => {
+    const { sampleDeterminization, searchTuning, tuneForMode, defaultSearchOptions } = await import('../src/searchbot.ts');
+    const { ctxOf } = await import('../src/reducer.ts');
+    const { groupOf } = await import('../src/trump.ts');
+    const rng = createRng('p4-prior');
+    let s = createGame(defaultConfig(4), 'p4-prior');
+    const step = (a: Parameters<typeof applyAction>[1]) => { const r = applyAction(s, a); if (!r.ok) throw new Error(r.error.message); s = r.state; };
+    while (s.phase === 'dealing') { for (let i = 0; i < 4; i++) { const d = smartDeclare(s, i, rng); if (d) step(d); } step({ type: 'dealCard' }); }
+    step({ type: 'closeDeclaring' });
+    while (s.phase !== 'playing') { const a = smartAction(s, s.dealer!, rng); if (a) step(a); }
+    const me = (s.dealer! + 1) % 4;
+    const ctx = ctxOf(s);
+    const trumps = (hand: readonly { suit: string; rank: number; id: string; deck: number }[]) => hand.filter((c) => groupOf(c as never, ctx) === 'T').length;
+    const avg = (priors: number) => {
+      searchTuning.priors = priors;
+      let dealerT = 0, otherT = 0;
+      for (let i = 0; i < 40; i++) {
+        const d = sampleDeterminization(s, me, rng);
+        expect(d.hands.map((h) => h.length)).toEqual(s.hands.map((h) => h.length));
+        dealerT += trumps(d.hands[s.dealer!]!);
+        otherT += trumps(d.hands[(s.dealer! + 2) % 4]!);
+      }
+      return dealerT / 40 - otherT / 40;
+    };
+    const withPrior = avg(1);
+    const without = avg(0);
+    searchTuning.priors = 1;
+    expect(withPrior).toBeGreaterThan(without);
+    // 服务端按模式放宽：四人采样上限 1.5 倍、候选至少 12；六人不变
+    const tuned = tuneForMode(s, defaultSearchOptions);
+    expect(tuned.maxSamples).toBe(Math.round(defaultSearchOptions.maxSamples * 1.5));
+    expect(tuned.maxCandidates).toBeGreaterThanOrEqual(12);
+    expect(tuneForMode(createGame(defaultConfig(6), 'y'), defaultSearchOptions)).toEqual(defaultSearchOptions);
+  }, 60_000);
+});

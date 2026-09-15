@@ -47,6 +47,9 @@ export interface SimOptions {
   /** 哪些座位用第三版搜索机器人 */
   readonly strongSeats?: readonly number[];
   readonly search?: SearchOptions;
+  /** 只开一部分二版特性的座位，与 subsetFeatures 配合做特性 A/B */
+  readonly subsetSeats?: readonly number[];
+  readonly subsetFeatures?: SmartFeatures;
   readonly onEvent?: (e: GameEvent, s: GameState) => void;
 }
 
@@ -114,14 +117,19 @@ export function simulateGame(config: GameConfig, seed: string, opts: SimOptions 
   const smart = new Set(opts.smartSeats ?? []);
   const basic = new Set(opts.basicSeats ?? []);
   const strong = new Set(opts.strongSeats ?? []);
+  const subset = new Set(opts.subsetSeats ?? []);
+  const subsetFeats = opts.subsetFeatures ?? SMART_V2;
   const search = opts.search ?? defaultSearchOptions;
   const feats = opts.smartFeatures ?? SMART_V2;
   const declareFor = (st: GameState, seat: number) =>
-    smart.has(seat) || strong.has(seat) ? smartDeclare(st, seat, rng, feats) : basic.has(seat) ? smartDeclare(st, seat, rng, 1) : botDeclare(st, seat, rng, bot);
+    smart.has(seat) || strong.has(seat) ? smartDeclare(st, seat, rng, feats)
+      : subset.has(seat) ? smartDeclare(st, seat, rng, subsetFeats)
+        : basic.has(seat) ? smartDeclare(st, seat, rng, 1) : botDeclare(st, seat, rng, bot);
   const actionFor = (st: GameState, seat: number) =>
     strong.has(seat) ? searchAction(st, seat, rng, search)
       : smart.has(seat) ? smartAction(st, seat, rng, feats)
-        : basic.has(seat) ? smartAction(st, seat, rng, 1) : botAction(st, seat, rng, bot);
+        : subset.has(seat) ? smartAction(st, seat, rng, subsetFeats)
+          : basic.has(seat) ? smartAction(st, seat, rng, 1) : botAction(st, seat, rng, bot);
   let s = createGame(config, seed);
   let guard = 0;
   while (s.phase !== 'gameOver') {

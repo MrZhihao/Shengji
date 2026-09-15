@@ -2,6 +2,8 @@
 import { defaultConfig, type PlayerCount } from '../config.ts';
 import { simulateGame, type SimStats } from './run.ts';
 import { SMART_V2, smartTuning, type SmartFeatures } from '../smartbot.ts';
+import { searchTuning } from '../searchbot.ts';
+import { endgameTuning } from '../endgame.ts';
 
 function arg(name: string, fallback: string): string {
   const i = process.argv.indexOf(`--${name}`);
@@ -12,7 +14,7 @@ const players = Number(arg('players', '6')) as PlayerCount;
 const games = Number(arg('games', '100'));
 const seed = arg('seed', 'shengji');
 const verbose = process.argv.includes('--verbose');
-/** --smart all：全部二版策略；half：偶数座位策略、奇数随机；ab：偶数座位二版、奇数座位一版；strong：偶数座位三版搜索、奇数座位二版；none：全随机 */
+/** --smart all：全部二版策略；half：偶数座位策略、奇数随机；ab：偶数座位二版、奇数座位一版；strong：偶数座位三版搜索、奇数座位二版；feat：偶数座位二版全特性、奇数座位只开 --features 列出的特性；none：全随机 */
 /** --budget 毫秒 / --samples N / --cands N：三版搜索的时间预算、最大采样数、候选数 */
 const smartMode = arg('smart', 'none');
 /** --features declare,call,lead,follow：二版机器人只开这些特性；默认全开 */
@@ -22,6 +24,7 @@ const smartFeatures: SmartFeatures = featureArg === 'all' ? SMART_V2 : {
   call: featureArg.includes('call'),
   lead: featureArg.includes('lead'),
   follow: featureArg.includes('follow'),
+  partner: featureArg.includes('partner'),
 };
 
 if (players !== 4 && players !== 5 && players !== 6) {
@@ -33,14 +36,20 @@ const config = defaultConfig(players);
 /** --tune declareSingle=9,declarePair=7 */
 for (const kv of arg('tune', '').split(',').filter(Boolean)) {
   const [k, v] = kv.split('=');
-  if (k && v && k in smartTuning) (smartTuning as Record<string, number>)[k] = Number(v);
+  if (!k || !v) continue;
+  if (k in smartTuning) (smartTuning as Record<string, number>)[k] = Number(v);
+  else if (k in searchTuning) (searchTuning as Record<string, number>)[k] = Number(v);
+  else if (k in endgameTuning) (endgameTuning as Record<string, number>)[k] = Number(v);
+  else { console.error(`未知调参项 ${k}`); process.exit(1); }
 }
-if (arg('tune', '')) console.log(`调参：${JSON.stringify(smartTuning)}`);
+if (arg('tune', '')) console.log(`调参：${JSON.stringify({ ...smartTuning, ...searchTuning, ...endgameTuning })}`);
 const allSeats = Array.from({ length: players }, (_, i) => i);
 const smartSeats = smartMode === 'all' ? allSeats
-  : smartMode === 'half' || smartMode === 'ab' ? allSeats.filter((i) => i % 2 === 0)
+  : smartMode === 'half' || smartMode === 'ab' || smartMode === 'feat' ? allSeats.filter((i) => i % 2 === 0)
   : [];
 const basicSeats = smartMode === 'ab' ? allSeats.filter((i) => i % 2 === 1) : [];
+/** feat 模式：奇数座位用 --features 指定的特性子集 */
+const subsetSeats = smartMode === 'feat' ? allSeats.filter((i) => i % 2 === 1) : [];
 const strongSeats = smartMode === 'strong' ? allSeats.filter((i) => i % 2 === 0) : [];
 const search = {
   timeBudgetMs: Number(arg('budget', '600')),
@@ -80,7 +89,7 @@ for (let g = 0; g < games; g++) {
           console.log(`  第 ${r.round} 局 庄家 ${r.dealer} 阵营 [${r.dealerTeam.join(',')}] 闲家得 ${r.opponentPoints} → ${r.dealerHeld ? '守住' : '下庄'} 升 ${r.levelsUp}，等级 ${r.levelsAfter.join('/')}`);
         }
       },
-    } : { smartSeats, basicSeats, strongSeats, search, smartFeatures });
+    } : { smartSeats, basicSeats, strongSeats, subsetSeats, subsetFeatures: smartFeatures, search, smartFeatures: smartMode === 'feat' ? SMART_V2 : smartFeatures });
   } catch (err) {
     console.error(`游戏 ${gameSeed} 出错：${(err as Error).message}`);
     process.exit(1);
@@ -109,8 +118,8 @@ console.log(`甩牌尝试：${agg.throwsAttempted}，失败：${agg.throwsFailed
 console.log(`朋友位：${agg.friendSlots}，揭晓：${agg.friendsRevealed}，庄家自占：${agg.dealerSelfFriend}`);
 const hist = Object.entries(agg.levelsUpHistogram).sort(([a], [b]) => a.localeCompare(b));
 console.log(`结算分布：${hist.map(([k, v]) => `${k}=${v}`).join('  ')}`);
-if (smartSeats.length > 0 || strongSeats.length > 0) {
-  const label = (i: number) => (strongSeats.includes(i) ? '搜索三版' : smartSeats.includes(i) ? '策略二版' : basicSeats.includes(i) ? '策略一版' : '随机');
+if (smartSeats.length > 0 || strongSeats.length > 0 || subsetSeats.length > 0) {
+  const label = (i: number) => (strongSeats.includes(i) ? '搜索三版' : smartSeats.includes(i) ? '策略二版' : basicSeats.includes(i) ? '策略一版' : subsetSeats.includes(i) ? `二版子集(${featureArg})` : '随机');
   console.log(`座位对比（${smartMode}${smartMode === 'ab' ? `，二版特性 ${featureArg}` : ''}）：`);
   const groups = new Map<string, number[]>();
   for (let i = 0; i < players; i++) {
@@ -118,8 +127,12 @@ if (smartSeats.length > 0 || strongSeats.length > 0) {
     const dr = agg.dealerRounds[i] ?? 0;
     console.log(`  座位 ${i} ${label(i)}：每轮胜率 ${((agg.roundWins[i] ?? 0) / agg.rounds * 100).toFixed(1)}%，每轮升级 ${((agg.levelGain[i] ?? 0) / agg.rounds).toFixed(3)}，坐庄 ${dr} 次守住 ${dr ? ((agg.dealerHolds[i] ?? 0) / dr * 100).toFixed(0) : '-'}%，整局获胜 ${gameWins[i]}`);
   }
+  const summary: Record<string, unknown> = { rounds: agg.rounds, games, groups: {} as Record<string, unknown> };
   for (const [name, seats] of groups) {
     const sum = (arr: readonly number[]) => seats.reduce((a, i) => a + (arr[i] ?? 0), 0);
     console.log(`  ${name} 合计：每轮升级 ${(sum(agg.levelGain) / agg.rounds / seats.length).toFixed(3)}，整局获胜 ${sum(gameWins)}，坐庄守住 ${sum(agg.dealerRounds) ? (sum(agg.dealerHolds) / sum(agg.dealerRounds) * 100).toFixed(0) : '-'}%（坐庄 ${sum(agg.dealerRounds)} 次）`);
+    (summary.groups as Record<string, unknown>)[name] = { seats: seats.length, levelGain: sum(agg.levelGain), gameWins: sum(gameWins), dealerRounds: sum(agg.dealerRounds), dealerHolds: sum(agg.dealerHolds) };
   }
+  // 机器可读的一行，供多进程汇总脚本使用
+  console.log(`SUMMARY ${JSON.stringify(summary)}`);
 }
