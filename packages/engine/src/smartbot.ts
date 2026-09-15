@@ -241,6 +241,8 @@ export const smartTuning = {
   majorityFactor: 1.15,
   /** 四人：对手在赢、对家还没出时垫分牌的扣分系数 */
   holdPointsFactor: 0.5,
+  /** 四人：庄家阵营主牌达到这个张数才主动吊主（两副牌共 36 张主，平均每人 9 张） */
+  dealerDrawMin4: 9,
   /** 四人：满足清主条件时领主对的加分 */
   clearTrumpBonus: 35,
   /** 四人：用主毙没分的墩的扣分 */
@@ -760,7 +762,8 @@ function leadCandidates(s: GameState, seat: Seat, sides: Sides, unseen: Map<stri
       } else if (g === 'T') {
         // 庄家阵营主牌够多就拉主，朋友都现身后配合更明确，门槛放低
         const allKnown = s.config.friendCount === 0 || (s.friendCalls.length > 0 && s.friendCalls.every((c) => c.resolvedSeat !== null));
-        const drawTrumps = (sides.likelyDealerSide && trumpCount >= (allKnown ? 7 : 8)) || trumpMajority;
+        const drawMin = partner ? smartTuning.dealerDrawMin4 : allKnown ? 7 : 8;
+        const drawTrumps = (sides.likelyDealerSide && trumpCount >= drawMin) || trumpMajority;
         score = (drawTrumps ? 60 : 15) - comp.top - pts * 4 - (comp.cards.length - 1) * 8;
       } else {
         score = 40 - comp.top - pts * 5 + Math.max(0, 8 - cards.length) * 2 - (comp.cards.length - 1) * 6;
