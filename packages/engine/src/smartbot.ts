@@ -241,8 +241,10 @@ export const smartTuning = {
   majorityFactor: 1.15,
   /** 四人：对手在赢、对家还没出时垫分牌的扣分系数 */
   holdPointsFactor: 0.5,
-  /** 四人：庄家阵营主牌达到这个张数才主动吊主（两副牌共 36 张主，平均每人 9 张） */
-  dealerDrawMin4: 9,
+  /** 四人有主：庄家阵营主牌达到这个张数才主动吊主（两副牌共 36 张主，平均每人 9 张） */
+  dealerDrawMin4: 11,
+  /** 四人无主：全桌只有 12 张主，平均 3 张，达到这个张数就可以吊 */
+  dealerDrawMin4NoTrump: 4,
   /** 四人：满足清主条件时领主对的加分 */
   clearTrumpBonus: 35,
   /** 四人：用主毙没分的墩的扣分 */
@@ -743,8 +745,11 @@ function leadCandidates(s: GameState, seat: Seat, sides: Sides, unseen: Map<stri
   const partner = partnerRules(s, f);
   // 四人：残局前几墩（每人还剩 6 到 9 张）是为末墩布局的时候
   const endgamePrep = partner && hand.length <= smartTuning.prepHand && !lastTrick;
-  // 四人主牌计数：自己的主比外面平均每人多就拉主；闲家也一样，把庄家的主拉光他就毙不了
-  const trumpMajority = partner && trumpCount >= 8 && trumpCount * (s.config.players - 1) > trumpsOutside * smartTuning.majorityFactor;
+  // 四人主牌计数：自己的主比外面平均每人多就拉主；闲家也一样，把庄家的主拉光他就毙不了。
+  // 无主时全桌只有 12 张主（4 张王 + 8 张级牌），门槛按比例缩小
+  const noTrump = ctx.trumpSuit === null;
+  const majorityMin = noTrump ? 3 : 8;
+  const trumpMajority = partner && trumpCount >= majorityMin && trumpCount * (s.config.players - 1) > trumpsOutside * smartTuning.majorityFactor;
   const out: LeadCandidate[] = [];
   for (const [g, cards] of byGroup) {
     const d = decompose(cards, ctx);
@@ -762,7 +767,8 @@ function leadCandidates(s: GameState, seat: Seat, sides: Sides, unseen: Map<stri
       } else if (g === 'T') {
         // 庄家阵营主牌够多就拉主，朋友都现身后配合更明确，门槛放低
         const allKnown = s.config.friendCount === 0 || (s.friendCalls.length > 0 && s.friendCalls.every((c) => c.resolvedSeat !== null));
-        const drawMin = partner ? smartTuning.dealerDrawMin4 : allKnown ? 7 : 8;
+        // 四人有主：庄家阵营主牌达到 dealerDrawMin4（11 张）以上才主动吊主；无主除外，无主 4 张（平均 3 张）就可以吊
+        const drawMin = partner ? (noTrump ? smartTuning.dealerDrawMin4NoTrump : smartTuning.dealerDrawMin4) : allKnown ? 7 : 8;
         const drawTrumps = (sides.likelyDealerSide && trumpCount >= drawMin) || trumpMajority;
         score = (drawTrumps ? 60 : 15) - comp.top - pts * 4 - (comp.cards.length - 1) * 8;
       } else {
