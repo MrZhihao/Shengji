@@ -241,6 +241,10 @@ export const smartTuning = {
   majorityFactor: 1.15,
   /** 四人：对手在赢、对家还没出时垫分牌的扣分系数 */
   holdPointsFactor: 0.5,
+  /** 四人：满足清主条件时领主对的加分 */
+  clearTrumpBonus: 35,
+  /** 四人：用主毙没分的墩的扣分 */
+  noPointRuffPenalty: 8,
   /** 1：扣底按庄家计划垫绝朋友门；0：只用普通扣底打分（实验开关） */
   planDiscards: 1,
   /** 叫缺门（没有引牌）的 A 的扣分；默认 0：缺门就是最短的门，直接叫 */
@@ -433,6 +437,16 @@ function rankBottomDiscards(s: GameState, seat: Seat): Card[] {
   const bySuit = new Map<Group, Card[]>();
   for (const c of hand) bySuit.set(groupOf(c, ctx), [...(bySuit.get(groupOf(c, ctx)) ?? []), c]);
   const pool = poolOf(hand, ctx);
+  // 四人对家模式：一定要绝一门副牌，这是和对家过桥的通道。挑最短、没有 A 的一门，整门加权
+  const partner = smartTuning.partnerRules > 0 && s.config.friendCount === 0;
+  let voidSuit: Group | null = null;
+  if (partner) {
+    const cands = [...bySuit.entries()].filter(([g]) => g !== 'T').map(([g, cs]) => ({ g, len: cs.length, hasAce: cs.some((x) => x.rank === 14), pts: sumPoints(cs) }));
+    cands.sort((a, b) => Number(a.hasAce) - Number(b.hasAce) || a.len - b.len || a.pts - b.pts);
+    // 底里最多放 5 分。这是软偏好：整门加 20 分，同种子 320 局对照里比强制绝门（加 45）每轮升级高约 0.01
+    const pick = cands.find((x) => x.len <= s.config.bottomSize && x.pts <= 5) ?? cands.find((x) => x.len <= s.config.bottomSize) ?? null;
+    voidSuit = pick?.g ?? null;
+  }
   const scored = hand.map((c) => {
     const g = groupOf(c, ctx);
     const suitLen = bySuit.get(g)?.length ?? 0;
@@ -441,8 +455,10 @@ function rankBottomDiscards(s: GameState, seat: Seat): Card[] {
     if (g === 'T') score -= 40;
     if (cardPoints(c) > 0) score -= 25;
     if (g !== 'T') score += Math.max(0, 8 - suitLen) * 3;
-    if (copies >= 2) score -= 12;
+    // 没分的副牌小对不必留（四人）；其他模式留对子跟牌
+    if (copies >= 2 && !(partner && g !== 'T' && cardPoints(c) === 0 && c.rank < 13)) score -= 12;
     if (c.rank === 14 && g !== 'T') score -= 15;
+    if (voidSuit !== null && g === voidSuit) score += 20;
     return { c, score };
   });
   scored.sort((a, b) => b.score - a.score);
@@ -600,6 +616,113 @@ function callFriendV2(s: GameState, seat: Seat): Action {
 
 interface LeadCandidate { cards: Card[]; score: number }
 
+// ---------- 四人对家模式的人类固定打法（来源见设计文档 3.6.3） ----------
+
+interface PartnerLeadCtx {
+  readonly s: GameState;
+  readonly seat: Seat;
+  readonly sides: Sides;
+  readonly ctx: TrumpCtx;
+  readonly hand: readonly Card[];
+  readonly g: Group;
+  readonly suitCards: readonly Card[];
+  readonly comp: Component;
+  readonly isSafe: boolean;
+  /** 本组稳赢组件数 */
+  readonly safeCount: number;
+  readonly pts: number;
+  readonly trumpCount: number;
+  readonly voids: Map<Seat, Set<Group>>;
+  readonly lastTrick: boolean;
+  readonly byGroup: Map<Group, Card[]>;
+}
+
+/** 某方是否在之前的墩里领出过主对（含拖拉机） */
+function ledTrumpPairsBefore(s: GameState, seats: ReadonlySet<Seat>): boolean {
+  const ctx = ctxOf(s);
+  for (const t of s.tricks) {
+    const first = t.plays[0];
+    if (!first || !seats.has(t.leader)) continue;
+    if (first.cards.length >= 2 && first.cards.every((c) => groupOf(c, ctx) === 'T')) return true;
+  }
+  return false;
+}
+
+/** 庄家最近三墩里是否领过主：中途吊主是「对家来帮我拉主」的信号 */
+function dealerLedTrumpRecently(s: GameState): boolean {
+  const ctx = ctxOf(s);
+  const recent = s.tricks.slice(-3);
+  return recent.some((t) => t.leader === s.dealer && (t.plays[0]?.cards ?? []).every((c) => groupOf(c, ctx) === 'T'));
+}
+
+/**
+ * 四人对家模式首出的固定打法加权。返回加到规则打分上的分。
+ * 只在 partnerRules 生效时调用。
+ */
+function partnerLeadBonus(c: PartnerLeadCtx): number {
+  const { s, seat, sides, ctx, hand, g, suitCards, comp, isSafe, safeCount, pts, trumpCount, voids, lastTrick, byGroup } = c;
+  const dealer = s.dealer as Seat;
+  const isDealer = seat === dealer;
+  const isPartner = sides.likelyDealerSide && !isDealer;
+  let b = 0;
+  const trumpDecomp = decompose(byGroup.get('T') ?? [], ctx);
+  const trumpPairs = trumpDecomp ? trumpDecomp.components.reduce((n, x) => n + (x.mult >= 2 ? x.length : 0), 0) : 0;
+  const bigJokerPair = hand.filter((x) => x.suit === 'J' && x.rank === 16).length >= 2;
+  const handHasTractor = [...byGroup.values()].some((cards) => decompose(cards, ctx)?.components.some((x) => x.kind === 'tractor'));
+
+  if (g === 'T' && !isSafe) {
+    // 清主：四个以上主对，或三个主对带一对大王，上手就打主对，一连四对外面基本没主了
+    const clearing = sides.likelyDealerSide && (trumpPairs >= 4 || (trumpPairs >= 3 && bigJokerPair));
+    if (clearing && comp.kind !== 'single') b += smartTuning.clearTrumpBonus;
+    // 起了主对之后勿打单张，否则给对手机会
+    if (clearing && comp.kind === 'single' && ledTrumpPairsBefore(s, sides.mates)) b -= 15;
+    // 三个主对没有大王对：先单吊两三轮再清主
+    if (sides.likelyDealerSide && !clearing && trumpPairs === 3 && comp.kind === 'single' && s.tricks.length < 6) b += 12;
+    // 庄家中途吊主是信号：对家停出副牌，跟着拉主
+    if (isPartner && dealerLedTrumpRecently(s) && trumpCount >= 2) b += 15;
+    // 对手在某门断门而我那门有对子：先出主对拉掉他的主，副对才安全
+    if (comp.kind !== 'single') {
+      for (const [sg, sc] of byGroup) {
+        if (sg === 'T') continue;
+        const hasPair = (decompose(sc, ctx)?.components ?? []).some((x) => x.mult >= 2);
+        if (!hasPair) continue;
+        let foeVoid = false;
+        for (let i = 0; i < s.config.players; i++) if (!sides.mates.has(i) && voids.get(i)?.has(sg)) foeVoid = true;
+        if (foeVoid) { b += 12; break; }
+      }
+    }
+  }
+  if (g !== 'T') {
+    const first = comp.cards[0] as Card;
+    const suitLen = suitCards.length;
+    const aces = suitCards.filter((x) => x.rank === 14).length;
+    const kings = suitCards.filter((x) => x.rank === 13).length;
+    const suitComps = decompose(suitCards, ctx)?.components ?? [];
+    const pairsHere = suitComps.reduce((n, x) => n + (x.mult >= 2 ? x.length : 0), 0);
+    const isAceSingle = comp.kind === 'single' && first.rank === 14;
+    // 庄家：副牌留 A 加单张不打，A 留着进手、压制对手甩牌、跑对家的分（开局前八墩）
+    if (isDealer && isAceSingle && suitLen <= 2 && s.tricks.length < 8 && !lastTrick) b -= 18;
+    // 有 AK 带一对的副牌，先出一张小牌问路
+    if (aces >= 1 && kings >= 1 && pairsHere >= 1 && comp.kind === 'single' && first.rank < 13 && pts === 0) b += 14;
+    // 某门副牌只剩一张（不管是不是分），主动打出去，免得以后被迫垫分
+    if (suitLen === 1 && first.rank !== 14 && !isSafe && !lastTrick) b += 10;
+    // 无分的副牌有多对，赶快出，可能抓到对 10、对 K
+    if (sumPoints(suitCards) === 0 && pairsHere >= 2 && comp.kind !== 'single' && !isSafe) b += 10;
+    if (isPartner) {
+      // 对家：先出庄家还有牌的门的 A（让庄家跑分），再出庄家已断门的 A
+      if (isSafe && isAceSingle) b += voids.get(dealer)?.has(g) ? -8 : 8;
+      // 对家不该藏单 A
+      if (suitLen === 1 && first.rank === 14) b += 12;
+      // 对家出完大牌只剩小对时不冲小对，改为吊主或刺庄家断门把牌权还给庄家
+      if (!isSafe && comp.kind === 'pair' && safeCount === 0) b -= 12;
+      if (!isSafe && comp.kind === 'single' && safeCount === 0 && pts === 0 && voids.get(dealer)?.has(g)) b += 10;
+    }
+    // 守庄方有连对：先出旁门 A 再出连对，免得旁门的分被人跑掉
+    if (sides.likelyDealerSide && isSafe && isAceSingle && handHasTractor) b += 10;
+  }
+  return b;
+}
+
 function leadCandidates(s: GameState, seat: Seat, sides: Sides, unseen: Map<string, number>, f: SmartFeatures): LeadCandidate[] {
   const hand = s.hands[seat] ?? [];
   const ctx = ctxOf(s);
@@ -681,6 +804,7 @@ function leadCandidates(s: GameState, seat: Seat, sides: Sides, unseen: Map<stri
         if (foeVoid(g)) score -= isSafe ? 45 : 10 + pts * 3;
         else if (mateVoid(g) && !isSafe) score += 22 + pts * 4;
       }
+      if (partner) score += partnerLeadBonus({ s, seat, sides, ctx, hand, g, suitCards: cards, comp, isSafe, safeCount: safe.length, pts, trumpCount, voids, lastTrick, byGroup });
       out.push({ cards: [...comp.cards], score });
     }
     // 甩牌：两个以上都安全的组件一起出
@@ -817,6 +941,8 @@ function evaluateFollow(s: GameState, seat: Seat, sides: Sides, cards: Card[], f
         score -= mine * smartTuning.holdPointsFactor;
       }
     }
+    // 四人：上家出没分的单张或小对副牌，不杀。毙掉没分的墩是白扔主
+    if (partner && !isLastTrick && pts === 0 && trick.lead && trick.lead.group !== 'T' && cards.every((c) => groupOf(c, ctx) === 'T')) score -= smartTuning.noPointRuffPenalty;
     // 四人残局前：闲家跟牌时尽量不拆稳赢的主对子，留到末墩抢底
     if (partner && !sides.likelyDealerSide && hand.length <= smartTuning.prepHand && !isLastTrick && cards.length === 1) {
       const c = cards[0] as Card;

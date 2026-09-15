@@ -204,3 +204,36 @@ describe('四人对家模式的搜索强化', () => {
     expect(tuneForMode(createGame(defaultConfig(6), 'y'), defaultSearchOptions)).toEqual(defaultSearchOptions);
   }, 60_000);
 });
+
+describe('四人固定打法', () => {
+  it('庄家扣底偏向绝掉一门副牌（最短、无 A 的一门）', async () => {
+    const { rankedBottomSets } = await import('../src/smartbot.ts');
+    const { ctxOf } = await import('../src/reducer.ts');
+    const { groupOf } = await import('../src/trump.ts');
+    let voided = 0, eligible = 0;
+    for (let g = 0; g < 12; g++) {
+      const rng = createRng(`p4-bottom-${g}`);
+      let s = createGame(defaultConfig(4), `p4-bottom-${g}`);
+      const step = (a: Parameters<typeof applyAction>[1]) => { const r = applyAction(s, a); if (!r.ok) throw new Error(r.error.message); s = r.state; };
+      while (s.phase === 'dealing') { for (let i = 0; i < 4; i++) { const d = smartDeclare(s, i, rng); if (d) step(d); } step({ type: 'dealCard' }); }
+      step({ type: 'closeDeclaring' });
+      if (s.phase !== 'bottom') continue;
+      const dealer = s.dealer!;
+      const ctx = ctxOf(s);
+      const hand = s.hands[dealer]!;
+      const bySuit = new Map<string, typeof hand>();
+      for (const c of hand) { const k = groupOf(c, ctx); if (k !== 'T') bySuit.set(k, [...(bySuit.get(k) ?? []), c]); }
+      const pts = (cs: typeof hand) => cs.reduce((a, c) => a + (c.rank === 5 ? 5 : c.rank === 10 || c.rank === 13 ? 10 : 0), 0);
+      const canVoid = [...bySuit.values()].some((cs) => cs.length <= s.config.bottomSize && !cs.some((c) => c.rank === 14) && pts(cs) <= 10);
+      if (!canVoid) continue;
+      eligible++;
+      const discard = new Set(rankedBottomSets(s, dealer, 1)[0]!.map((c) => c.id));
+      const after = hand.filter((c) => !discard.has(c.id));
+      const suitsAfter = new Set(after.map((c) => groupOf(c, ctx)).filter((k) => k !== 'T'));
+      if (suitsAfter.size < bySuit.size) voided++;
+    }
+    expect(eligible).toBeGreaterThan(0);
+    // 软偏好：多数情况下绝掉一门，但分牌、A 等更重要的因素可以压过它
+    expect(voided).toBeGreaterThanOrEqual(Math.ceil(eligible / 2));
+  }, 60_000);
+});
