@@ -97,10 +97,12 @@ export function sampleDeterminization(s: GameState, seat: Seat, rng: Rng): Deter
   }
   const bottomCap = bottomKnown ? 0 : s.bottom.length;
 
-  // 四人对家模式：按公开信息给各家加先验权重。庄家扣底留主，主牌偏向庄家；亮主的人主多；
+  // 按公开信息给各家加先验权重。庄家扣底留主，主牌偏向庄家；亮主的人主多；
   // 主动领过主的人主多。权重只改变采样分布，不排除任何可能。
   const trumpPrior: number[] = Array.from({ length: n }, () => 1);
-  if (s.config.friendCount === 0 && searchTuning.priors > 0) {
+  // 只在四人对家模式用：五六人三副牌实测这些先验反而让误差变大（1.13 张 → 1.17 到 1.47 张），
+  // 领过副牌的人那门更长的先验也测过，效果在噪声内，都不用。
+  if (searchTuning.priors > 0 && s.config.friendCount === 0) {
     if (s.dealer !== null && s.dealer !== seat) trumpPrior[s.dealer] = searchTuning.dealerTrumpPrior;
     if (s.declaration && s.declaration.seat !== seat) trumpPrior[s.declaration.seat] = Math.max(trumpPrior[s.declaration.seat] as number, searchTuning.declarerTrumpPrior);
     for (const t of s.tricks) {

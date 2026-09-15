@@ -6,7 +6,8 @@ import { scoreRound } from '../src/scoring.ts';
 describe('结算阶梯', () => {
   it('5 人 60 分一级，120 下庄', () => {
     const cfg = defaultConfig(5);
-    expect(scoreRound(0, cfg)).toEqual({ dealerHeld: true, levelsUp: 2 });
+    expect(scoreRound(0, cfg)).toEqual({ dealerHeld: true, levelsUp: 3 });
+    expect(scoreRound(5, cfg)).toEqual({ dealerHeld: true, levelsUp: 2 });
     expect(scoreRound(59, cfg)).toEqual({ dealerHeld: true, levelsUp: 2 });
     expect(scoreRound(60, cfg)).toEqual({ dealerHeld: true, levelsUp: 1 });
     expect(scoreRound(119, cfg)).toEqual({ dealerHeld: true, levelsUp: 1 });
@@ -19,6 +20,7 @@ describe('结算阶梯', () => {
 
   it('6 人 50 分一级，100 下庄', () => {
     const cfg = defaultConfig(6);
+    expect(scoreRound(0, cfg)).toEqual({ dealerHeld: true, levelsUp: 3 });
     expect(scoreRound(49, cfg)).toEqual({ dealerHeld: true, levelsUp: 2 });
     expect(scoreRound(50, cfg)).toEqual({ dealerHeld: true, levelsUp: 1 });
     expect(scoreRound(100, cfg)).toEqual({ dealerHeld: false, levelsUp: 0 });

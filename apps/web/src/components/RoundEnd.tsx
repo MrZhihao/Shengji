@@ -12,7 +12,7 @@ export function RoundEnd({ view, room, onNext, onReplay }: { view: PlayerView; r
       <div className="sheet">
         <div className="sheet-title">{gameOver ? '游戏结束' : `第 ${r.round} 局结算`}</div>
         <div className={`result-line ${iWon ? 'win' : ''}`}>
-          {r.dealerHeld ? '庄家阵营守住了' : '闲家上台'}
+          {r.dealerHeld ? (r.opponentPoints === 0 ? '大光！闲家一分没得' : '庄家阵营守住了') : '闲家上台'}
           {!gameOver && (r.levelsUp > 0 ? `，${r.dealerHeld ? '庄家阵营' : '闲家阵营'}升 ${r.levelsUp} 级` : '，不升级')}
           {iWon ? '，你这边赢了' : ''}
         </div>

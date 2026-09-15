@@ -150,7 +150,7 @@ describe('四人对家模式的搜索强化', () => {
     const rng = createRng('p4-endgame');
     let s = createGame(defaultConfig(4), 'p4-endgame');
     expect(exactMaxCards(s)).toBe(5);
-    expect(exactMaxCards(createGame(defaultConfig(6), 'x'))).toBe(3);
+    expect(exactMaxCards(createGame(defaultConfig(6), 'x'))).toBe(4);
     const step = (a: Parameters<typeof applyAction>[1]) => { const r = applyAction(s, a); if (!r.ok) throw new Error(r.error.message); s = r.state; };
     while (s.phase === 'dealing') { for (let i = 0; i < 4; i++) { const d = smartDeclare(s, i, rng); if (d) step(d); } step({ type: 'dealCard' }); }
     step({ type: 'closeDeclaring' });

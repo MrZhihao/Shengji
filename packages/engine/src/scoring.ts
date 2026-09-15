@@ -10,7 +10,10 @@ export interface RoundOutcome {
 
 export function scoreRound(opponentPoints: number, cfg: GameConfig): RoundOutcome {
   const L = cfg.levelStep;
-  const steps = Math.floor(Math.max(0, opponentPoints) / L);
-  if (opponentPoints < 2 * L) return { dealerHeld: true, levelsUp: 2 - steps };
+  const P = Math.max(0, opponentPoints);
+  // 闲家一分没得（大光）：庄家阵营升 3
+  if (P === 0) return { dealerHeld: true, levelsUp: 3 };
+  const steps = Math.floor(P / L);
+  if (P < 2 * L) return { dealerHeld: true, levelsUp: 2 - steps };
   return { dealerHeld: false, levelsUp: steps - 2 };
 }

@@ -19,18 +19,28 @@ export const EXACT_MAX_CARDS = 3;
  * 五六人分支多，只算最后 3 张。
  */
 export function exactMaxCards(s: GameState): number {
-  return s.config.players === 4 ? endgameTuning.exactMaxCards4 : EXACT_MAX_CARDS;
+  const n = s.config.players;
+  return n === 4 ? endgameTuning.exactMaxCards4 : n === 5 ? endgameTuning.exactMaxCards5 : endgameTuning.exactMaxCards6;
 }
 
-/** 节点预算：四人模式放宽到 6 万 */
+/** 节点预算，按人数分开 */
 export function exactNodeBudget(s: GameState): number {
-  return s.config.players === 4 ? endgameTuning.nodeBudget4 : 40_000;
+  const n = s.config.players;
+  return n === 4 ? endgameTuning.nodeBudget4 : n === 5 ? endgameTuning.nodeBudget5 : endgameTuning.nodeBudget6;
 }
 
-/** 四人模式残局求解参数，模拟器可用 --tune 改动做 A/B */
+/**
+ * 残局求解参数，按人数分开；模拟器可用 --tune 改动做 A/B。
+ * 实测（去重、走子排序、置换表之后）：四人 5 张约八成算完、平均 70 毫秒；
+ * 五人 4 张 6 万节点内约 97% 算完、平均 25 毫秒；六人 4 张 4 万节点内约六成算完、平均 60 毫秒。
+ */
 export const endgameTuning = {
   exactMaxCards4: 5,
   nodeBudget4: 60_000,
+  exactMaxCards5: 4,
+  nodeBudget5: 60_000,
+  exactMaxCards6: 4,
+  nodeBudget6: 40_000,
 };
 
 /** 局终收益（从 seat 角度，单位：一级） */
