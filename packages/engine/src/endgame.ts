@@ -33,13 +33,14 @@ export function exactNodeBudget(s: GameState): number {
  * 残局求解参数，按人数分开；模拟器可用 --tune 改动做 A/B。
  * 实测（去重、走子排序、置换表之后）：四人 5 张约八成算完、平均 70 毫秒；
  * 五人 4 张 6 万节点内约 97% 算完、平均 25 毫秒；六人 4 张 4 万节点内约六成算完、平均 60 毫秒。
+ * 五六人维持原来的 3 张：放宽到 4 张的对照没有跑完就按要求停了，不改未验证的东西。
  */
 export const endgameTuning = {
   exactMaxCards4: 5,
   nodeBudget4: 60_000,
-  exactMaxCards5: 4,
-  nodeBudget5: 60_000,
-  exactMaxCards6: 4,
+  exactMaxCards5: EXACT_MAX_CARDS,
+  nodeBudget5: 40_000,
+  exactMaxCards6: EXACT_MAX_CARDS,
   nodeBudget6: 40_000,
 };
 
