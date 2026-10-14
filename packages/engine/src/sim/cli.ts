@@ -4,6 +4,10 @@ import { simulateGame, type SimStats } from './run.ts';
 import { SMART_V2, smartTuning, type SmartFeatures } from '../smartbot.ts';
 import { searchTuning } from '../searchbot.ts';
 import { endgameTuning } from '../endgame.ts';
+import { loadBeliefModels } from '../node.ts';
+
+const beliefLoaded = loadBeliefModels();
+if (beliefLoaded.length) console.log(`手牌推断模型：${beliefLoaded.join('、')} 人`);
 
 function arg(name: string, fallback: string): string {
   const i = process.argv.indexOf(`--${name}`);
@@ -50,7 +54,9 @@ const smartSeats = smartMode === 'all' ? allSeats
 const basicSeats = smartMode === 'ab' ? allSeats.filter((i) => i % 2 === 1) : [];
 /** feat 模式：奇数座位用 --features 指定的特性子集 */
 const subsetSeats = smartMode === 'feat' ? allSeats.filter((i) => i % 2 === 1) : [];
-const strongSeats = smartMode === 'strong' ? allSeats.filter((i) => i % 2 === 0) : [];
+const strongSeats = smartMode === 'strong' ? allSeats.filter((i) => i % 2 === 0) : smartMode === 'beliefab' ? allSeats : [];
+/** beliefab：全部座位都是搜索版，偶数座位开手牌推断网络、奇数座位关 */
+const beliefSeats = smartMode === 'beliefab' ? allSeats.filter((i) => i % 2 === 0) : undefined;
 const search = {
   timeBudgetMs: Number(arg('budget', '600')),
   minSamples: 2,
@@ -89,7 +95,7 @@ for (let g = 0; g < games; g++) {
           console.log(`  第 ${r.round} 局 庄家 ${r.dealer} 阵营 [${r.dealerTeam.join(',')}] 闲家得 ${r.opponentPoints} → ${r.dealerHeld ? '守住' : '下庄'} 升 ${r.levelsUp}，等级 ${r.levelsAfter.join('/')}`);
         }
       },
-    } : { smartSeats, basicSeats, strongSeats, subsetSeats, subsetFeatures: smartFeatures, search, smartFeatures: smartMode === 'feat' ? SMART_V2 : smartFeatures });
+    } : { smartSeats, basicSeats, strongSeats, beliefSeats, subsetSeats, subsetFeatures: smartFeatures, search, smartFeatures: smartMode === 'feat' ? SMART_V2 : smartFeatures });
   } catch (err) {
     console.error(`游戏 ${gameSeed} 出错：${(err as Error).message}`);
     process.exit(1);
@@ -119,7 +125,7 @@ console.log(`朋友位：${agg.friendSlots}，揭晓：${agg.friendsRevealed}，
 const hist = Object.entries(agg.levelsUpHistogram).sort(([a], [b]) => a.localeCompare(b));
 console.log(`结算分布：${hist.map(([k, v]) => `${k}=${v}`).join('  ')}`);
 if (smartSeats.length > 0 || strongSeats.length > 0 || subsetSeats.length > 0) {
-  const label = (i: number) => (strongSeats.includes(i) ? '搜索三版' : smartSeats.includes(i) ? '策略二版' : basicSeats.includes(i) ? '策略一版' : subsetSeats.includes(i) ? `二版子集(${featureArg})` : '随机');
+  const label = (i: number) => (beliefSeats ? (beliefSeats.includes(i) ? '搜索+推断网络' : '搜索') : strongSeats.includes(i) ? '搜索三版' : smartSeats.includes(i) ? '策略二版' : basicSeats.includes(i) ? '策略一版' : subsetSeats.includes(i) ? `二版子集(${featureArg})` : '随机');
   console.log(`座位对比（${smartMode}${smartMode === 'ab' ? `，二版特性 ${featureArg}` : ''}）：`);
   const groups = new Map<string, number[]>();
   for (let i = 0; i < players; i++) {

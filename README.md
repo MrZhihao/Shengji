@@ -25,6 +25,17 @@ pnpm sim -- --players 6 --games 300 --smart ab --features follow   # 新旧策�
 pnpm sim -- --players 6 --games 300 --smart ab --tune declareSingle=9,declarePair=7  # 调亮主阈值
 ```
 
+手牌推断网络（训练只需在本机做一次，模型已在 `packages/engine/models`）：
+
+```bash
+python3 -m venv ml/.venv && ml/.venv/bin/pip install torch numpy
+node_modules/.bin/tsx packages/engine/src/sim/beliefData.ts --players 4 --rounds 12000 --seed tr0 --out ml/data/p4-tr0
+node_modules/.bin/tsx packages/engine/src/sim/beliefData.ts --players 4 --rounds 1500 --seed te --out ml/data/p4-te
+ml/.venv/bin/python ml/train_belief.py --players 4
+node_modules/.bin/tsx packages/engine/src/sim/beliefEval.ts --players 4
+pnpm sim -- --players 4 --games 10 --smart beliefab --budget 999999 --samples 8   # 搜索版有无推断网络对打
+```
+
 本地联机（两个终端）：
 
 ```bash

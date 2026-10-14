@@ -1,11 +1,11 @@
 /** 用随机机器人跑完整局，检查不变量，收集统计。 */
 import { botAction, botDeclare, defaultBotOptions, type BotOptions } from '../bot.ts';
-import { SMART_V2, smartAction, smartDeclare, type SmartFeatures } from '../smartbot.ts';
-import { defaultSearchOptions, searchAction, type SearchOptions } from '../searchbot.ts';
+import { SMART_V2, candidatePlays, smartAction, smartDeclare, type SmartFeatures } from '../smartbot.ts';
+import { defaultSearchOptions, searchAction, searchTuning, type SearchOptions } from '../searchbot.ts';
 import { sumPoints } from '../cards.ts';
 import { decompose } from '../combos.ts';
 import type { GameConfig } from '../config.ts';
-import { applyAction, createGame } from '../reducer.ts';
+import { currentTurn, applyAction, createGame } from '../reducer.ts';
 import { createRng } from '../rng.ts';
 import type { GameEvent, GameState } from '../state.ts';
 
@@ -50,6 +50,10 @@ export interface SimOptions {
   /** 只开一部分二版特性的座位，与 subsetFeatures 配合做特性 A/B */
   readonly subsetSeats?: readonly number[];
   readonly subsetFeatures?: SmartFeatures;
+  /** 搜索座位里哪些启用手牌推断网络（不传则全按 searchTuning.belief） */
+  readonly beliefSeats?: readonly number[];
+  /** 二版机器人出牌时以这个概率改从规则打分前 4 名里随机挑一个，让训练数据更多样 */
+  readonly noise?: number;
   readonly onEvent?: (e: GameEvent, s: GameState) => void;
 }
 
@@ -125,9 +129,22 @@ export function simulateGame(config: GameConfig, seed: string, opts: SimOptions 
     smart.has(seat) || strong.has(seat) ? smartDeclare(st, seat, rng, feats)
       : subset.has(seat) ? smartDeclare(st, seat, rng, subsetFeats)
         : basic.has(seat) ? smartDeclare(st, seat, rng, 1) : botDeclare(st, seat, rng, bot);
+  const noise = opts.noise ?? 0;
+  const noisy = (st: GameState, seat: number) => {
+    const cands = candidatePlays(st, seat, rng, feats).slice(0, 4);
+    const pick = cands[Math.floor(rng.next() * cands.length)];
+    return pick ? { type: 'play' as const, seat, cards: pick.cards.map((c) => c.id) } : smartAction(st, seat, rng, feats);
+  };
+  const beliefSeats = opts.beliefSeats ? new Set(opts.beliefSeats) : null;
+  const strongAction = (st: GameState, seat: number) => {
+    if (!beliefSeats) return searchAction(st, seat, rng, search);
+    const before = searchTuning.belief;
+    searchTuning.belief = beliefSeats.has(seat) ? 1 : 0;
+    try { return searchAction(st, seat, rng, search); } finally { searchTuning.belief = before; }
+  };
   const actionFor = (st: GameState, seat: number) =>
-    strong.has(seat) ? searchAction(st, seat, rng, search)
-      : smart.has(seat) ? smartAction(st, seat, rng, feats)
+    strong.has(seat) ? strongAction(st, seat)
+      : smart.has(seat) ? (noise > 0 && st.phase === 'playing' && currentTurn(st) === seat && rng.next() < noise ? noisy(st, seat) : smartAction(st, seat, rng, feats))
         : subset.has(seat) ? smartAction(st, seat, rng, subsetFeats)
           : basic.has(seat) ? smartAction(st, seat, rng, 1) : botAction(st, seat, rng, bot);
   let s = createGame(config, seed);

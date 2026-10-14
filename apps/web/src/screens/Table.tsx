@@ -272,7 +272,7 @@ export function Table({ client }: { client: GameClient }) {
         <span className="tb-item">闲家 <b>{view.visibleOpponentPoints}</b>{view.pendingPoints > 0 && <span className="pending"> 待定 {view.pendingPoints}</span>}</span>
         <span className="tb-item">底 {view.bottomCount}{view.phase === 'dealing' ? ` · 剩 ${view.deckRemaining}` : ''}</span>
         <button className="tb-btn" onClick={() => setSoundOn(sound.toggle())} aria-label="音效">{soundOn ? '🔊' : '🔇'}</button>
-        <button className="tb-btn" onClick={() => setMenuOpen((v) => !v)} aria-label="菜单">⋯</button>
+        <button className={`tb-menu ${menuOpen ? 'open' : ''}`} onClick={() => setMenuOpen((v) => !v)} aria-label="菜单" aria-expanded={menuOpen}>⋯ 菜单</button>
       </header>
       {menuOpen && (
         <div className="host-menu">

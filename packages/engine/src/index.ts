@@ -16,3 +16,4 @@ export * from './bot.ts';
 export * from './smartbot.ts';
 export * from './searchbot.ts';
 export * from './endgame.ts';
+export * from './belief.ts';

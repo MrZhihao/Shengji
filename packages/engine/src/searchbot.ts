@@ -4,7 +4,7 @@
  * 按约束随机补全全桌手牌，对每个候选出法用策略机器人把这局推演完，取平均收益最好的。
  * 同一份采样用于全部候选（共同随机数），降低方差。带时间预算。
  */
-import { makeDeck, type Card } from './cards.ts';
+import { type Card, type Suit } from './cards.ts';
 import { applyAction, ctxOf, currentTurn } from './reducer.ts';
 import { createRng, type Rng } from './rng.ts';
 import { candidatePlays, knownVoids, rankedBottomSets, rankedFriendCallSets, smartAction, type PlayCandidate } from './smartbot.ts';
@@ -12,6 +12,7 @@ import type { FriendCallSpec } from './state.ts';
 import type { Action, GameState, Seat } from './state.ts';
 import { groupOf, type Group } from './trump.ts';
 import { exactMaxCards, exactValueAfterPlay, terminalUtility } from './endgame.ts';
+import { beliefLoc, beliefProbs, canonIndex, hiddenInfo, suitSlots } from './belief.ts';
 
 // 引擎不依赖 DOM 或 Node 类型，这里只声明用到的两个全局
 declare const setTimeout: (fn: () => void, ms: number) => unknown;
@@ -34,6 +35,8 @@ export const searchTuning = {
   dealerTrumpPrior: 3.0,
   declarerTrumpPrior: 1.6,
   trumpLeaderPrior: 2.5,
+  /** 手牌推断网络（1 开 0 关）；只在装入了对应人数的模型时生效 */
+  belief: 1,
 };
 
 export const defaultSearchOptions: SearchOptions = { timeBudgetMs: 600, minSamples: 4, maxSamples: 48, maxCandidates: 10 };
@@ -63,16 +66,6 @@ interface Determinization {
   bottom: Card[];
 }
 
-/** 已经公开在某人手里的牌：亮主时亮出的、尚未打出的牌 */
-function revealedInHands(s: GameState): Map<Seat, Card[]> {
-  const out = new Map<Seat, Card[]>();
-  const d = s.declaration;
-  if (!d) return out;
-  const stillHeld = d.cards.filter((c) => (s.hands[d.seat] ?? []).some((h) => h.id === c.id));
-  if (stillHeld.length) out.set(d.seat, stillHeld);
-  return out;
-}
-
 /**
  * 生成一份与我方视角一致的全桌手牌。失败（约束冲突）时最多重试若干次，再退回忽略断门约束。
  */
@@ -80,29 +73,18 @@ export function sampleDeterminization(s: GameState, seat: Seat, rng: Rng): Deter
   const n = s.config.players;
   const ctx = ctxOf(s);
   const myHand = s.hands[seat] ?? [];
-  const known = new Set<string>(myHand.map((c) => c.id));
-  for (const t of s.tricks) for (const p of t.plays) for (const c of p.cards) known.add(c.id);
-  if (s.trick) for (const p of s.trick.plays) for (const c of p.cards) known.add(c.id);
-  const bottomKnown = seat === s.dealer;
-  if (bottomKnown) for (const c of s.bottom) known.add(c.id);
-  const revealed = revealedInHands(s);
-  for (const [who, cards] of revealed) if (who !== seat) for (const c of cards) known.add(c.id);
-
-  const pool = makeDeck(s.config.decks).filter((c) => !known.has(c.id));
-  const voids = knownVoids(s);
-  const capacity: number[] = [];
-  for (let i = 0; i < n; i++) {
-    if (i === seat) { capacity.push(0); continue; }
-    capacity.push((s.hands[i]?.length ?? 0) - (revealed.get(i)?.length ?? 0));
-  }
-  const bottomCap = bottomKnown ? 0 : s.bottom.length;
+  const info = hiddenInfo(s, seat);
+  const { pool, capacity, bottomCap, bottomKnown, revealed, voids } = info;
+  // 手牌推断网络：有模型且开关打开时，用它给每张牌在每个位置的概率代替均匀分配和手写先验
+  const probs = searchTuning.belief > 0 ? beliefProbs(s, seat, info) : null;
+  const slots = probs ? suitSlots(s.trumpSuit) : null;
 
   // 按公开信息给各家加先验权重。庄家扣底留主，主牌偏向庄家；亮主的人主多；
   // 主动领过主的人主多。权重只改变采样分布，不排除任何可能。
   const trumpPrior: number[] = Array.from({ length: n }, () => 1);
   // 只在四人对家模式用：五六人三副牌实测这些先验反而让误差变大（1.13 张 → 1.17 到 1.47 张），
   // 领过副牌的人那门更长的先验也测过，效果在噪声内，都不用。
-  if (searchTuning.priors > 0 && s.config.friendCount === 0) {
+  if (!probs && searchTuning.priors > 0 && s.config.friendCount === 0) {
     if (s.dealer !== null && s.dealer !== seat) trumpPrior[s.dealer] = searchTuning.dealerTrumpPrior;
     if (s.declaration && s.declaration.seat !== seat) trumpPrior[s.declaration.seat] = Math.max(trumpPrior[s.declaration.seat] as number, searchTuning.declarerTrumpPrior);
     for (const t of s.tricks) {
@@ -125,7 +107,11 @@ export function sampleDeterminization(s: GameState, seat: Seat, rng: Rng): Deter
     for (const { c, g } of constrained) {
       const eligible: number[] = [];
       let total = 0;
-      const weightOf = (i: number) => cap[i]! * (g === 'T' ? (trumpPrior[i] as number) : 1);
+      // 有网络时：剩余容量 × 网络给的概率 ÷ 初始容量。网络给出均匀概率时退化为原来的按容量分配
+      const ci = probs ? canonIndex(c, slots as Suit[]) * n : 0;
+      const weightOf = probs
+        ? (i: number) => (cap[i]! * Math.max(1e-4, probs[ci + beliefLoc(i, seat, n)] as number)) / Math.max(1, capacity[i]!)
+        : (i: number) => cap[i]! * (g === 'T' ? (trumpPrior[i] as number) : 1);
       for (let i = 0; i < n; i++) {
         if (cap[i]! <= 0) continue;
         if (respectVoids && voids.get(i)?.has(g)) continue;
@@ -133,7 +119,11 @@ export function sampleDeterminization(s: GameState, seat: Seat, rng: Rng): Deter
         total += weightOf(i);
       }
       let bottomWeight = 0;
-      if (bcap > 0) { eligible.push(-1); bottomWeight = bcap * bottomBias(c, g); total += bottomWeight; }
+      if (bcap > 0) {
+        eligible.push(-1);
+        bottomWeight = probs ? (bcap * Math.max(1e-4, probs[ci + n - 1] as number)) / Math.max(1, bottomCap) : bcap * bottomBias(c, g);
+        total += bottomWeight;
+      }
       if (eligible.length === 0) return null;
       // 按剩余容量加权随机；主牌再乘各家的先验；底牌按「庄家会不会扣这张」再加权
       let r = rng.next() * total;

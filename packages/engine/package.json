@@ -5,7 +5,8 @@
   "type": "module",
   "description": "升级·找朋友 规则引擎，零运行时依赖",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./node": "./src/node.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
