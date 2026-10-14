@@ -159,6 +159,16 @@ export function Table({ client }: { client: GameClient }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [flash, setFlash] = useState<string | null>(null);
   const [linger, setLinger] = useState<{ trick: typeof view.lastTrick; until: number } | null>(null);
+  // 「上一轮」按钮：点一下把上一墩每人出的牌摆回桌上看 3 秒，再点一下提前收起
+  const [peek, setPeek] = useState(false);
+  const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const togglePeek = () => {
+    if (peekTimer.current) clearTimeout(peekTimer.current);
+    if (peek) { peekTimer.current = null; setPeek(false); return; }
+    setPeek(true);
+    peekTimer.current = setTimeout(() => { peekTimer.current = null; setPeek(false); }, 3000);
+  };
+  useEffect(() => () => { if (peekTimer.current) clearTimeout(peekTimer.current); }, []);
   const [soundOn, setSoundOn] = useState(sound.enabled);
   const [menuOpen, setMenuOpen] = useState(false);
   // 牌桌宽度与窗口高度：出牌太长、牌间距压到最小仍放不下时整排缩小，需要知道牌桌多宽、牌有多宽
@@ -234,15 +244,20 @@ export function Table({ client }: { client: GameClient }) {
     }
   }, [client.events]);
 
-  // 上一墩短暂停留并飞向赢家
+  // 服务端每次都发整份视图，lastTrick 每次都是新对象；用牌的内容当键，只在真的有新一墩结束时触发
+  const lastTrickKey = view.lastTrick ? `${view.round}:${view.lastTrick.plays.map((p) => p.cards.map((c) => c.id).join(',')).join('|')}` : '';
+  // 上一墩短暂停留并飞向赢家；新的一墩结束时收起「上一轮」
   useEffect(() => {
+    if (peekTimer.current) { clearTimeout(peekTimer.current); peekTimer.current = null; }
+    setPeek(false);
     if (view.lastTrick && (view.trick?.plays.length ?? 0) === 0) {
       setLinger({ trick: view.lastTrick, until: Date.now() + 1100 });
       const t = setTimeout(() => setLinger(null), 1100);
       return () => clearTimeout(t);
     }
     return undefined;
-  }, [view.lastTrick]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastTrickKey]);
 
   const myTurn = view.phase === 'playing' && view.currentTurn === me;
   useEffect(() => {
@@ -307,11 +322,13 @@ export function Table({ client }: { client: GameClient }) {
     return `第${CN_NTH[c.nth - 1]}张 ${GLYPH[c.suit]}${rankName(c.rank)} · ${who}`;
   });
 
-  // 当前要显示的出牌：进行中的墩，或停留中的上一墩
+  // 当前要显示的出牌：「上一轮」查看中的上一墩，进行中的墩，或停留中的上一墩
   const currentPlays: readonly TrickPlay[] = view.trick?.plays ?? [];
-  const lingering = currentPlays.length === 0 && linger && linger.trick ? linger.trick : null;
-  const shownPlays: readonly TrickPlay[] = lingering ? lingering.plays : currentPlays;
+  const peeking = peek && view.lastTrick ? view.lastTrick : null;
+  const lingering = !peeking && currentPlays.length === 0 && linger && linger.trick ? linger.trick : null;
+  const shownPlays: readonly TrickPlay[] = peeking ? peeking.plays : lingering ? lingering.plays : currentPlays;
   const winnerPos = lingering ? posOf(lingering.winner) : null;
+  const canPeek = view.phase === 'playing' && view.lastTrick !== null;
 
   const pct = (p: Pos): React.CSSProperties => ({ left: `${p.x}%`, top: `${p.y}%` });
 
@@ -404,15 +421,27 @@ export function Table({ client }: { client: GameClient }) {
             ['--cy' as string]: winnerPos ? `${(winnerPos.y - to.y) * 0.5}vh` : '0px',
           };
           return (
-            <div key={`${p.seat}-${lingering ? 'l' : 'c'}`} className={`play ${lingering ? 'collect' : ''}`} style={style}>
+            <div
+              key={`${p.seat}-${peeking ? 'p' : lingering ? 'l' : 'c'}`}
+              className={`play ${lingering ? 'collect' : ''} ${peeking ? 'peek' : ''} ${peeking && peeking.winner === p.seat ? 'won' : ''}`}
+              style={style}
+            >
               <CardRow cards={p.cards} small />
             </div>
           );
         })}
 
+        {canPeek && (
+          <button type="button" className={`peek-btn ${peeking ? 'on' : ''}`} onClick={togglePeek} aria-pressed={Boolean(peeking)}>
+            {peeking ? '收起' : '上一轮'}
+          </button>
+        )}
+
         {/* 桌上有牌时把提示挪到左上角，免得压住出的牌 */}
         <div className={`center-msg ${shownPlays.length > 0 && view.phase === 'playing' ? 'aside' : ''}`} style={pct(CENTER)}>
-          <div className={`status ${flash ? 'flash' : ''}`}>{flash ?? statusText(view, name)}</div>
+          <div className={`status ${flash ? 'flash' : ''} ${peeking ? 'peeking' : ''}`}>
+            {peeking ? `上一轮：${name(peeking.winner)} 赢${peeking.points ? `，${peeking.points} 分` : ''}` : (flash ?? statusText(view, name))}
+          </div>
           {view.declaration && (view.phase === 'dealing' || view.phase === 'declaring') && (
             <div className="declared"><span>{name(view.declaration.seat)} 亮</span><CardRow cards={view.declaration.cards} small /></div>
           )}
