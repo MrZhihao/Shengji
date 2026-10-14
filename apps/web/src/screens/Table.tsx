@@ -22,8 +22,39 @@ const SEAT_POS: Record<number, Pos[]> = {
   5: [{ x: 90, y: 64 }, { x: 73, y: 12 }, { x: 50, y: 10 }, { x: 27, y: 12 }, { x: 10, y: 64 }],
 };
 const ME_POS: Pos = { x: 50, y: 104 };
+
+/**
+ * 每个座位出牌的落点和最大宽度（牌桌宽度的百分比）。按人数固定排好，保证所有人同时出拖拉机、甩牌时互不压住：
+ * 顶上一排在各自座位正下方，两侧的牌放在座位内侧；五六人时两侧的牌再往下放，避开顶上一排。
+ * 牌多时缩小牌间距，整排不超过最大宽度。手机横屏 667×375 与 844×390 实测见设计文档 3.5。
+ */
+interface PlaySlot extends Pos { readonly maxW: number }
+const PLAY_POS: Record<number, PlaySlot[]> = {
+  3: [{ x: 69.5, y: 50, maxW: 19 }, { x: 50, y: 43, maxW: 19 }, { x: 30.5, y: 50, maxW: 19 }],
+  4: [{ x: 70.5, y: 76.5, maxW: 20 }, { x: 67, y: 44, maxW: 26 }, { x: 33, y: 44, maxW: 26 }, { x: 29.5, y: 76.5, maxW: 20 }],
+  5: [{ x: 70.5, y: 76.5, maxW: 20 }, { x: 71.5, y: 44, maxW: 21 }, { x: 50, y: 44, maxW: 21 }, { x: 28.5, y: 44, maxW: 21 }, { x: 29.5, y: 76.5, maxW: 20 }],
+};
+const ME_PLAY: PlaySlot = { x: 50, y: 83, maxW: 19 };
+
+/** 桌上一排牌最少露出的宽度（px），和 styles.css 里的 14px 一致 */
+const MIN_CARD_STEP = 14;
 const CENTER: Pos = { x: 50, y: 56 };
 const towardCenter = (p: Pos, t: number): Pos => ({ x: p.x + (CENTER.x - p.x) * t, y: p.y + (CENTER.y - p.y) * t });
+
+/**
+ * 牌间距压到最小仍超出该座位最大宽度时的缩放比例。maxW 是牌桌宽度的百分比（cqw），vp.w 是牌桌宽度；
+ * 牌宽与 styles.css 一致：屏幕高 600 以上 60px，否则 48px
+ */
+function playScale(n: number, maxW: number, vp: { w: number; h: number; feltH: number }): number {
+  const cardW = vp.h >= 600 ? 60 : 48;
+  const cardH = vp.h >= 600 ? 84 : 67;
+  // 高度：出牌落点按「牌高约占牌桌高 32%」排；牌桌更矮时（上面多了朋友牌、分牌一行）整体按比例缩小。
+  // 座位牌是固定像素高（约 52px），顶上一排出牌（中心在 44%）不能碰到顶上座位牌（中心约 12%）的下沿
+  const H = vp.feltH;
+  const byHeight = Math.min((0.32 * H) / cardH, (0.32 * H - 26) / (cardH / 2));
+  const byWidth = n <= 1 ? 1 : ((maxW * vp.w) / 100) / (cardW + MIN_CARD_STEP * (n - 1));
+  return Math.min(1, Math.max(0.6, Math.min(byWidth, byHeight)));
+}
 
 function roleOf(view: PlayerView, seat: Seat): { text: string; cls: string } {
   if (view.dealer === seat) return { text: '庄', cls: 'dealer' };
@@ -121,6 +152,17 @@ export function Table({ client }: { client: GameClient }) {
   const [linger, setLinger] = useState<{ trick: typeof view.lastTrick; until: number } | null>(null);
   const [soundOn, setSoundOn] = useState(sound.enabled);
   const [menuOpen, setMenuOpen] = useState(false);
+  // 牌桌宽度与窗口高度：出牌太长、牌间距压到最小仍放不下时整排缩小，需要知道牌桌多宽、牌有多宽
+  const feltRef = useRef<HTMLElement | null>(null);
+  const [viewport, setViewport] = useState(() => ({ w: window.innerWidth, h: window.innerHeight, feltH: 210 }));
+  useEffect(() => {
+    const update = () => setViewport({ w: feltRef.current?.clientWidth ?? window.innerWidth, h: window.innerHeight, feltH: feltRef.current?.clientHeight ?? 210 });
+    update();
+    const ro = typeof ResizeObserver !== 'undefined' && feltRef.current ? new ResizeObserver(update) : null;
+    if (ro && feltRef.current) ro.observe(feltRef.current);
+    window.addEventListener('resize', update);
+    return () => { ro?.disconnect(); window.removeEventListener('resize', update); };
+  }, []);
   const prevHandIds = useRef<Set<string>>(new Set());
   const prevTurn = useRef<boolean>(false);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -130,13 +172,16 @@ export function Table({ client }: { client: GameClient }) {
     const opps: Seat[] = [];
     for (let k = 1; k < n; k++) opps.push((me + k) % n);
     const map = new Map<Seat, Pos>();
+    const plays = new Map<Seat, PlaySlot>();
     const list = SEAT_POS[n - 1] ?? SEAT_POS[5]!;
-    opps.forEach((s, i) => map.set(s, list[i] as Pos));
+    const playList = PLAY_POS[n - 1] ?? PLAY_POS[5]!;
+    opps.forEach((s, i) => { map.set(s, list[i] as Pos); plays.set(s, playList[i] as PlaySlot); });
     map.set(me, ME_POS);
-    return { opps, map };
+    plays.set(me, ME_PLAY);
+    return { opps, map, plays };
   }, [me, n]);
   const posOf = (s: Seat): Pos => positions.map.get(s) ?? CENTER;
-  const playPosOf = (s: Seat): Pos => (s === me ? { x: 50, y: 83 } : towardCenter(posOf(s), 0.6));
+  const playPosOf = (s: Seat): PlaySlot => positions.plays.get(s) ?? { ...towardCenter(posOf(s), 0.6), maxW: 20 };
 
   // 手牌变化：清理失效选择，标记新发到的牌
   const newIds = useMemo(() => {
@@ -299,19 +344,24 @@ export function Table({ client }: { client: GameClient }) {
           <button className="ghost small" onClick={() => setMenuOpen(false)}>取消</button>
         </div>
       )}
-      {view.friendCalls.length > 0 && <div className="friends-line">朋友牌：{friendText.join('　')}</div>}
-      {(view.opponentPointCards.length > 0 || view.pendingPointCards.length > 0) && (
-        <div className="points-line">
-          <span className="points-label">闲家分牌</span>
-          <div className="points-cards">
-            {view.opponentPointCards.map((c) => <CardView key={c.id} card={c} small />)}
-            {view.pendingPointCards.map((c) => <CardView key={c.id} card={c} small dim />)}
-          </div>
-          {view.pendingPointCards.length > 0 && <span className="points-note">变暗的是身份未定的人抓的</span>}
+      {/* 朋友牌和闲家分牌合成一行、分牌用小号牌，少占牌桌的高度 */}
+      {(view.friendCalls.length > 0 || view.opponentPointCards.length > 0 || view.pendingPointCards.length > 0) && (
+        <div className="info-line">
+          {view.friendCalls.length > 0 && <span className="friends-line">朋友牌：{friendText.join('　')}</span>}
+          {(view.opponentPointCards.length > 0 || view.pendingPointCards.length > 0) && (
+            <span className="points-line">
+              <span className="points-label">闲家分牌</span>
+              <span className="points-cards">
+                {view.opponentPointCards.map((c) => <CardView key={c.id} card={c} small className="mini" />)}
+                {view.pendingPointCards.map((c) => <CardView key={c.id} card={c} small dim className="mini" />)}
+              </span>
+              {view.pendingPointCards.length > 0 && <span className="points-note">暗的是身份未定的人抓的</span>}
+            </span>
+          )}
         </div>
       )}
 
-      <section className="felt">
+      <section className="felt" ref={feltRef}>
         <div className="felt-ring" />
         {positions.opps.map((seat) => {
           const role = roleOf(view, seat);
@@ -335,6 +385,9 @@ export function Table({ client }: { client: GameClient }) {
           const from = posOf(p.seat), to = playPosOf(p.seat);
           const style: React.CSSProperties = {
             ...pct(to),
+            ['--n' as string]: String(p.cards.length),
+            ['--maxw' as string]: `${to.maxW}cqw`,
+            ['--k' as string]: String(playScale(p.cards.length, to.maxW, viewport)),
             ['--fx' as string]: `${(from.x - to.x) * 0.9}vw`,
             ['--fy' as string]: `${(from.y - to.y) * 0.5}vh`,
             ['--cx' as string]: winnerPos ? `${(winnerPos.x - to.x) * 0.9}vw` : '0px',
@@ -347,7 +400,8 @@ export function Table({ client }: { client: GameClient }) {
           );
         })}
 
-        <div className="center-msg" style={pct(CENTER)}>
+        {/* 桌上有牌时把提示挪到左上角，免得压住出的牌 */}
+        <div className={`center-msg ${shownPlays.length > 0 && view.phase === 'playing' ? 'aside' : ''}`} style={pct(CENTER)}>
           <div className={`status ${flash ? 'flash' : ''}`}>{flash ?? statusText(view, name)}</div>
           {view.declaration && (view.phase === 'dealing' || view.phase === 'declaring') && (
             <div className="declared"><span>{name(view.declaration.seat)} 亮</span><CardRow cards={view.declaration.cards} small /></div>
