@@ -287,9 +287,12 @@ b { font-weight: 700; }
 .play .card-row { transform: scale(var(--k, 1)); transform-origin: center; }
 .center-msg.aside { left: 10px !important; top: 6px !important; transform: none; align-items: flex-start; max-width: 16cqw; }
 .center-msg.aside .status { font-size: 13px; padding: 4px 10px; text-align: left; border-radius: 12px; }
-/* 「上一轮」按钮在牌桌右上角，查看时把上一墩摆回各人的出牌位，赢家那手金框 */
-.peek-btn { position: absolute; top: 6px; right: 10px; z-index: 5; background: rgba(0,0,0,.4); color: var(--gold-2); border: 1px solid rgba(224,176,82,.7); border-radius: 999px; padding: 4px 12px; font-size: 13px; font-weight: 700; min-height: 30px; }
-.peek-btn.on { background: var(--gold); color: var(--gold-ink); border-color: var(--gold); }
+/* 「上一轮」在操作区和「提示」并排；查看时把上一墩摆回各人的出牌位，赢家那手金框 */
+.actions .action-row { display: flex; gap: 6px; }
+.actions .action-row .ghost { flex: 1 1 0; min-width: 0; padding-left: 4px; padding-right: 4px; white-space: nowrap; }
+.actions .peek-btn { color: var(--gold-2); border-color: rgba(224,176,82,.7); }
+.actions .peek-btn.on { background: var(--gold); color: var(--gold-ink); border-color: var(--gold); }
+.actions .peek-btn:disabled { color: var(--muted); border-color: var(--line-2); }
 .play.peek { animation: peek-in .18s ease-out both; }
 .play.peek.won .card-row { outline: 2px solid var(--gold); outline-offset: 3px; border-radius: 8px; box-shadow: 0 0 14px rgba(224,176,82,.55); }
 .status.peeking { color: var(--gold-2); border: 1px solid rgba(224,176,82,.6); }

@@ -431,12 +431,6 @@ export function Table({ client }: { client: GameClient }) {
           );
         })}
 
-        {canPeek && (
-          <button type="button" className={`peek-btn ${peeking ? 'on' : ''}`} onClick={togglePeek} aria-pressed={Boolean(peeking)}>
-            {peeking ? '收起' : '上一轮'}
-          </button>
-        )}
-
         {/* 桌上有牌时把提示挪到左上角，免得压住出的牌 */}
         <div className={`center-msg ${shownPlays.length > 0 && view.phase === 'playing' ? 'aside' : ''}`} style={pct(CENTER)}>
           <div className={`status ${flash ? 'flash' : ''} ${peeking ? 'peeking' : ''}`}>
@@ -496,7 +490,13 @@ export function Table({ client }: { client: GameClient }) {
           )}
           {view.phase === 'playing' && (
             <>
-              <button className="ghost" disabled={!myTurn} onClick={hint}>提示</button>
+              {/* 「上一轮」和「提示」并排一行，不增加操作区高度；还没打完第一墩时「上一轮」先灰着 */}
+              <div className="action-row">
+                <button className={`ghost peek-btn ${peeking ? 'on' : ''}`} disabled={!canPeek} onClick={togglePeek} aria-pressed={Boolean(peeking)}>
+                  {peeking ? '收起' : '上一轮'}
+                </button>
+                <button className="ghost" disabled={!myTurn} onClick={hint}>提示</button>
+              </div>
               <button className={`primary ${myTurn ? 'pulse' : ''}`} disabled={!canPlay} onClick={() => { send({ t: 'play', cards: selected }); setSelected([]); }}>
                 出牌{selected.length ? ` ${selected.length} 张` : ''}
               </button>
