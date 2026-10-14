@@ -1,9 +1,10 @@
 /** 搜索工作线程：收到一批种子就跑采样，回传各候选的累计收益。 */
 import { parentPort } from 'node:worker_threads';
 import { runSearchBatch, type SearchBatchJob } from '@shengji/engine';
-import { loadBeliefModels } from '@shengji/engine/node';
+import { loadBeliefModels, loadValueModels } from '@shengji/engine/node';
 
 loadBeliefModels();
+loadValueModels();
 
 interface Request { readonly id: number; readonly job: SearchBatchJob }
 

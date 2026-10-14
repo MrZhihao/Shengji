@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseBeliefModel, setBeliefModel, type BeliefModelMeta } from './belief.ts';
+import { parseValueModel, setValueModel, type ValueModelMeta } from './valuenet.ts';
 
 export const MODELS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'models');
 
@@ -33,4 +34,28 @@ export function loadBeliefModels(dir: string = MODELS_DIR, which: readonly numbe
     }
   }
   return loaded;
+}
+
+/** 环境变量 VALUE_PLAYERS 指定装哪些人数的价值网络；VALUE=0 时不装 */
+export function loadValueModels(dir: string = MODELS_DIR, which: readonly number[] = parsePlayers(process.env.VALUE_PLAYERS) ?? [4]): number[] {
+  if (process.env.VALUE === '0') return [];
+  const loaded: number[] = [];
+  for (const players of which) {
+    const metaPath = join(dir, `value-${players}.json`);
+    const binPath = join(dir, `value-${players}.bin`);
+    if (!existsSync(metaPath) || !existsSync(binPath)) continue;
+    try {
+      const meta = JSON.parse(readFileSync(metaPath, 'utf8')) as ValueModelMeta;
+      setValueModel(players, parseValueModel(meta, new Uint8Array(readFileSync(binPath))));
+      loaded.push(players);
+    } catch (err) {
+      console.error(`价值网络 ${players} 人装入失败：${(err as Error).message}`);
+    }
+  }
+  return loaded;
+}
+
+function parsePlayers(v: string | undefined): number[] | null {
+  if (!v) return null;
+  return v.split(',').map((x) => Number(x.trim())).filter((x) => x === 4 || x === 5 || x === 6);
 }

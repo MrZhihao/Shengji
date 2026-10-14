@@ -52,6 +52,8 @@ export interface SimOptions {
   readonly subsetFeatures?: SmartFeatures;
   /** 搜索座位里哪些启用手牌推断网络（不传则全按 searchTuning.belief） */
   readonly beliefSeats?: readonly number[];
+  /** 搜索座位里哪些启用价值网络（不传则全按 searchTuning.value） */
+  readonly valueSeats?: readonly number[];
   /** 二版机器人出牌时以这个概率改从规则打分前 4 名里随机挑一个，让训练数据更多样 */
   readonly noise?: number;
   readonly onEvent?: (e: GameEvent, s: GameState) => void;
@@ -136,11 +138,12 @@ export function simulateGame(config: GameConfig, seed: string, opts: SimOptions 
     return pick ? { type: 'play' as const, seat, cards: pick.cards.map((c) => c.id) } : smartAction(st, seat, rng, feats);
   };
   const beliefSeats = opts.beliefSeats ? new Set(opts.beliefSeats) : null;
+  const valueSeats = opts.valueSeats ? new Set(opts.valueSeats) : null;
   const strongAction = (st: GameState, seat: number) => {
-    if (!beliefSeats) return searchAction(st, seat, rng, search);
-    const before = searchTuning.belief;
-    searchTuning.belief = beliefSeats.has(seat) ? 1 : 0;
-    try { return searchAction(st, seat, rng, search); } finally { searchTuning.belief = before; }
+    const before = { belief: searchTuning.belief, value: searchTuning.value };
+    if (beliefSeats) searchTuning.belief = beliefSeats.has(seat) ? 1 : 0;
+    if (valueSeats) searchTuning.value = valueSeats.has(seat) ? 1 : 0;
+    try { return searchAction(st, seat, rng, search); } finally { searchTuning.belief = before.belief; searchTuning.value = before.value; }
   };
   const actionFor = (st: GameState, seat: number) =>
     strong.has(seat) ? strongAction(st, seat)

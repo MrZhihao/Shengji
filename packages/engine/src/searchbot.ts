@@ -13,6 +13,7 @@ import type { Action, GameState, Seat } from './state.ts';
 import { groupOf, type Group } from './trump.ts';
 import { exactMaxCards, exactValueAfterPlay, terminalUtility } from './endgame.ts';
 import { beliefLoc, beliefProbs, canonIndex, hiddenInfo, suitSlots } from './belief.ts';
+import { hasValueModel, predictUtility } from './valuenet.ts';
 
 // 引擎不依赖 DOM 或 Node 类型，这里只声明用到的两个全局
 declare const setTimeout: (fn: () => void, ms: number) => unknown;
@@ -37,7 +38,25 @@ export const searchTuning = {
   trumpLeaderPrior: 2.5,
   /** 手牌推断网络（1 开 0 关）；只在装入了对应人数的模型时生效 */
   belief: 1,
+  /** 完美信息价值网络（1 开 0 关）；只在装入了对应人数的模型、且阵营已知（四人对家）时生效 */
+  value: 1,
+  /** 推演至少打完这么多墩之后，在下一墩开始时交给价值网络估值 */
+  valueDepth: 1,
+  /** 每人还剩这么多张以内时不截断，推演到底（最后几墩便宜又关键） */
+  valueMinCards: 4,
 };
+
+/**
+ * 推演截断：在一墩刚开始时，如果已经从起点打完了至少 valueDepth 墩、牌还多，就用价值网络估这一局的收益。
+ * 返回 null 表示继续推演。
+ */
+function valueCut(s: GameState, seat: Seat, startTricks: number): number | null {
+  if (searchTuning.value <= 0 || s.config.friendCount !== 0) return null;
+  if (s.phase !== 'playing' || !s.trick || s.trick.plays.length > 0) return null;
+  if (s.tricks.length - startTricks < searchTuning.valueDepth) return null;
+  if ((s.hands[seat]?.length ?? 0) <= searchTuning.valueMinCards) return null;
+  return predictUtility(s, seat);
+}
 
 export const defaultSearchOptions: SearchOptions = { timeBudgetMs: 600, minSamples: 4, maxSamples: 48, maxCandidates: 10 };
 
@@ -47,7 +66,10 @@ export const defaultSearchOptions: SearchOptions = { timeBudgetMs: 600, minSampl
  */
 export function tuneForMode(s: GameState, opts: SearchOptions): SearchOptions {
   if (s.config.players !== 4) return opts;
-  return { ...opts, maxSamples: Math.round(opts.maxSamples * 1.5), maxCandidates: Math.max(opts.maxCandidates, 12) };
+  // 有价值网络时每次采样便宜十几倍，采样上限放开，让时间预算决定采多少
+  const valueOn = searchTuning.value > 0 && hasValueModel(4);
+  const maxSamples = valueOn ? Math.max(opts.maxSamples, 2000) : Math.round(opts.maxSamples * 1.5);
+  return { ...opts, maxSamples, maxCandidates: Math.max(opts.maxCandidates, 12) };
 }
 
 export interface SearchResult {
@@ -171,12 +193,15 @@ function rollout(base: GameState, seat: Seat, cards: Card[], det: Determinizatio
     const exact = exactValueAfterPlay(s, seat, cards);
     if (exact !== null) return exact;
   }
+  const startTricks = s.tricks.length;
   const first = applyAction(s, { type: 'play', seat, cards: cards.map((c) => c.id) });
   if (!first.ok) return null;
   s = first.state;
   let guard = 0;
   while (s.phase === 'playing') {
     if (++guard > 400) return null;
+    const cut = valueCut(s, seat, startTricks);
+    if (cut !== null) return cut;
     const turn = currentTurn(s);
     if (turn === null) return null;
     const a = smartAction(s, turn, rng, 2);
@@ -202,7 +227,7 @@ export function evaluateAction(base: GameState, seat: Seat, action: Action, det:
   }
   const r = applyAction(s, action);
   if (!r.ok) return null;
-  return playoutFrom(r.state, seat, rng);
+  return playoutFrom(r.state, seat, rng, s.tricks.length);
 }
 
 export interface SearchBatchJob {
@@ -365,11 +390,13 @@ export async function searchPlayAsync(s: GameState, seat: Seat, rng: Rng, opts: 
 // ---------- 庄家决策：扣底与叫朋友也用推演 ----------
 
 /** 从任意阶段把这局用二版机器人打到结束，返回 seat 角度收益 */
-function playoutFrom(start: GameState, seat: Seat, rng: Rng): number | null {
+function playoutFrom(start: GameState, seat: Seat, rng: Rng, startTricks = start.tricks.length): number | null {
   let s = start;
   let guard = 0;
   while (s.phase !== 'roundEnd' && s.phase !== 'gameOver') {
     if (++guard > 500) return null;
+    const cut = valueCut(s, seat, startTricks);
+    if (cut !== null) return cut;
     const actor = s.phase === 'playing' ? currentTurn(s) : s.dealer;
     if (actor === null) return null;
     const a = smartAction(s, actor, rng, 2);

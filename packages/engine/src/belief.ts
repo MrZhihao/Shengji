@@ -259,14 +259,19 @@ export function parseBeliefModel(meta: BeliefModelMeta, weights: Uint8Array): Be
 }
 
 function forward(model: BeliefModel, x: Float32Array): Float32Array {
+  return denseForward(model.layers, x);
+}
+
+/** 多层感知机前向：隐藏层 ReLU，最后一层线性。手牌推断网络和价值网络共用 */
+export function denseForward(layers: readonly DenseLayer[], x: Float32Array): Float32Array {
   let h = x;
-  model.layers.forEach((L, li) => {
+  layers.forEach((L, li) => {
     const out = new Float32Array(L.outSize);
     for (let j = 0; j < L.outSize; j++) {
       let acc = L.b[j] as number;
       const row = j * L.inSize;
       for (let k = 0; k < L.inSize; k++) acc += (L.w[row + k] as number) * (h[k] as number);
-      out[j] = li < model.layers.length - 1 && acc < 0 ? 0 : acc; // 隐藏层 ReLU
+      out[j] = li < layers.length - 1 && acc < 0 ? 0 : acc; // 隐藏层 ReLU
     }
     h = out;
   });

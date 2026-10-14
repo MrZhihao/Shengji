@@ -34,6 +34,10 @@ node_modules/.bin/tsx packages/engine/src/sim/beliefData.ts --players 4 --rounds
 ml/.venv/bin/python ml/train_belief.py --players 4
 node_modules/.bin/tsx packages/engine/src/sim/beliefEval.ts --players 4
 pnpm sim -- --players 4 --games 10 --smart beliefab --budget 999999 --samples 8   # 搜索版有无推断网络对打
+node_modules/.bin/tsx packages/engine/src/sim/valueData.ts --players 4 --rounds 11000 --seed vtr0 --out ml/data/v4-tr0
+node_modules/.bin/tsx packages/engine/src/sim/valueData.ts --players 4 --rounds 3000 --seed vte --out ml/data/v4-te
+ml/.venv/bin/python ml/train_value.py --players 4 --hidden 128 --layers 2
+pnpm sim -- --players 4 --games 6 --smart valueab --budget 300 --samples 100000   # 同样时间，搜索版有无价值网络对打
 ```
 
 本地联机（两个终端）：

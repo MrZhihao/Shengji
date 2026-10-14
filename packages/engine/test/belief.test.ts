@@ -92,3 +92,33 @@ describe('手牌推断网络', () => {
     }
   });
 });
+
+describe('完美信息价值网络', () => {
+  it('特征长度固定；装入模型后庄家方与闲家方的估值互为相反数，搜索照常给出合法出法', async () => {
+    const { valueFeatureSize, valueFeatures, parseValueModel, setValueModel, predictUtility } = await import('../src/valuenet.ts');
+    const { searchPlay, searchTuning } = await import('../src/searchbot.ts');
+    const { applyAction, dealerTeam } = await import('../src/reducer.ts');
+    const F = valueFeatureSize(4);
+    const H = 8;
+    const rng = createRng('rand-value');
+    const n = F * H + H + H + 1;
+    const w = new Float32Array(n);
+    for (let i = 0; i < n; i++) w[i] = (rng.next() - 0.5) * 0.2;
+    setValueModel(4, parseValueModel({ version: 1, players: 4, inputSize: F, scale: new Array(F).fill(3), layers: [{ inSize: F, outSize: H }, { inSize: H, outSize: 1 }] }, new Uint8Array(w.buffer)));
+    try {
+      const pos = positions(4, 8);
+      for (const { s, me } of pos) {
+        expect(valueFeatures(s).length).toBe(F);
+        const team = dealerTeam(s);
+        const mate = team[0]!;
+        const foe = [0, 1, 2, 3].find((i) => !team.includes(i))!;
+        expect(predictUtility(s, mate)!).toBeCloseTo(-predictUtility(s, foe)!, 6);
+        searchTuning.value = 1;
+        const r = searchPlay(s, me, createRng('vs'), { timeBudgetMs: 0, minSamples: 2, maxSamples: 2, maxCandidates: 4 });
+        expect(applyAction(s, r.action).ok).toBe(true);
+      }
+    } finally {
+      setValueModel(4, null);
+    }
+  }, 60_000);
+});

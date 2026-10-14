@@ -76,8 +76,10 @@ export class SearchPool {
     let alive = actions.map((_, i) => i);
     let samples = 0;
     const lanes = Math.max(1, this.size);
-    const perWorker = 2;
+    // 每轮给每个 worker 派几个种子：采样慢时 2 个，采样快（有价值网络）时逐轮加倍，摊薄线程间收发消息的开销
+    let perWorker = 2;
     while (samples < opts.maxSamples && (samples < opts.minSamples || Date.now() - t0 <= opts.timeBudgetMs)) {
+      const roundStart = Date.now();
       const jobs: SearchBatchJob[] = [];
       for (let w = 0; w < lanes && samples + jobs.length * perWorker < opts.maxSamples; w++) {
         const seeds = Array.from({ length: perWorker }, () => `${rng.next()}`);
@@ -95,6 +97,8 @@ export class SearchPool {
       }
       alive = pruneCandidates(alive, sums, counts, samples, tieBreak);
       if (alive.length === 1) break;
+      const roundMs = Date.now() - roundStart;
+      if (roundMs < 40 && perWorker < 64) perWorker *= 2;
     }
     const best = chooseBest(alive, sums, counts, tieBreak);
     return { action: actions[best] as Action, samples, candidates: n, elapsedMs: Date.now() - t0, workers: this.size };
