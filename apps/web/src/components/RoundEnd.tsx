@@ -2,7 +2,13 @@ import { levelRank, rankName, type PlayerView } from '@shengji/engine';
 import type { RoomInfo } from '@shengji/protocol';
 import { CardRow } from './CardView.tsx';
 
-export function RoundEnd({ view, room, onNext, onReplay }: { view: PlayerView; room: RoomInfo; onNext: () => void; onReplay: () => void }) {
+export function RoundEnd({ view, room, onNext, onReplay, onLeave, onLobby }: {
+  view: PlayerView; room: RoomInfo; onNext: () => void; onReplay: () => void;
+  /** 退出房间 */
+  onLeave: () => void;
+  /** 房主：回大厅，座位保留，等级归零，可以再开一局 */
+  onLobby: () => void;
+}) {
   const r = view.lastRound!;
   const name = (seat: number) => room.seats[seat]?.name ?? `${seat + 1} 号`;
   const gameOver = view.phase === 'gameOver';
@@ -51,7 +57,22 @@ export function RoundEnd({ view, room, onNext, onReplay }: { view: PlayerView; r
         )}
         <div className="sheet-actions">
           <button className="ghost" onClick={onReplay}>回放本局</button>
-          {!gameOver && (room.youAreHost ? <button className="primary" onClick={onNext}>下一局</button> : <div className="hint">等待房主开始下一局</div>)}
+          {gameOver ? (
+            <>
+              <button className="ghost danger" onClick={onLeave}>退出</button>
+              {room.youAreHost ? <button className="primary" onClick={onLobby}>回到大厅</button> : <div className="hint">等房主回到大厅再开一局，或直接退出</div>}
+            </>
+          ) : (
+            <>
+              <button
+                className="ghost danger"
+                onClick={() => {
+                  if (confirm(`退出本局？你的座位由机器人接管${room.youAreHost ? '，房主交给下一位真人' : ''}。之后用房间码 ${room.code} 重新进入可以接回机器人的座位。`)) onLeave();
+                }}
+              >退出本局</button>
+              {room.youAreHost ? <button className="primary" onClick={onNext}>下一局</button> : <div className="hint">等待房主开始下一局</div>}
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -506,7 +506,14 @@ export function Table({ client }: { client: GameClient }) {
       </section>
 
       {(view.phase === 'roundEnd' || view.phase === 'gameOver') && view.lastRound && (
-        <RoundEnd view={view} room={room} onNext={() => send({ t: 'nextRound' })} onReplay={() => send({ t: 'getReplay', round: view.round })} />
+        <RoundEnd
+          view={view}
+          room={room}
+          onNext={() => send({ t: 'nextRound' })}
+          onReplay={() => send({ t: 'getReplay', round: view.round })}
+          onLeave={() => send({ t: 'leaveRoom' })}
+          onLobby={() => send({ t: 'abortGame' })}
+        />
       )}
     </div>
   );

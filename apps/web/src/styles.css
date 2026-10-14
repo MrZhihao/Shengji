@@ -177,7 +177,7 @@ b { font-weight: 700; }
 
 /* 结算 */
 .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: flex-end; justify-content: center; z-index: 20; animation: fade .2s ease-out; }
-.sheet { background: var(--felt-2); width: 100%; max-width: 540px; border-radius: 18px 18px 0 0; padding: 18px 18px calc(20px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 10px; max-height: 88dvh; overflow-y: auto; animation: rise .28s cubic-bezier(.2,.8,.2,1); border-top: 2px solid var(--gold); }
+.sheet { --sheet-pb: calc(20px + env(safe-area-inset-bottom)); background: var(--felt-2); width: 100%; max-width: 540px; border-radius: 18px 18px 0 0; padding: 18px 18px var(--sheet-pb); display: flex; flex-direction: column; gap: 10px; max-height: 88dvh; overflow-y: auto; animation: rise .28s cubic-bezier(.2,.8,.2,1); border-top: 2px solid var(--gold); }
 @media (min-width: 640px) { .overlay { align-items: center; } .sheet { border-radius: 18px; border: 1px solid var(--line-2); border-top: 2px solid var(--gold); } }
 .sheet-title { font-size: 20px; font-weight: 800; }
 .result-line { font-size: 16px; }
@@ -224,6 +224,8 @@ b { font-weight: 700; }
 /* 回放 */
 .sheet-head { display: flex; align-items: center; justify-content: space-between; }
 .sheet-actions { display: flex; gap: 10px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+/* 结算面板在手机横屏上比屏幕高：按钮钉在面板底部，不用往下滚就能看到 */
+.sheet > .sheet-actions { position: sticky; bottom: calc(-1 * var(--sheet-pb)); z-index: 1; margin-top: auto; padding: 8px 0 var(--sheet-pb); margin-bottom: calc(-1 * var(--sheet-pb)); background: var(--felt-2); box-shadow: 0 -10px 12px var(--felt-2); }
 .sheet-actions .primary { flex: 1; }
 .replay .sheet { max-height: 92dvh; }
 .replay-hands { display: flex; flex-direction: column; gap: 8px; }
@@ -297,7 +299,7 @@ b { font-weight: 700; }
 .play.peek.won .card-row { outline: 2px solid var(--gold); outline-offset: 3px; border-radius: 8px; box-shadow: 0 0 14px rgba(224,176,82,.55); }
 .status.peeking { color: var(--gold-2); border: 1px solid rgba(224,176,82,.6); }
 @keyframes peek-in { from { opacity: 0; transform: translate(-50%, -50%) scale(.94); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
-.sheet { max-height: 96dvh; padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); gap: 6px; }
+.sheet { --sheet-pb: calc(12px + env(safe-area-inset-bottom)); max-height: 96dvh; padding: 12px 14px var(--sheet-pb); gap: 6px; }
 .sheet-title { font-size: 16px; }
 
 /* 屏幕够高时（电脑、平板横屏）把牌面和文字放大 */
