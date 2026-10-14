@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  createRng, decompose, generateFollow, groupOf, identityKey, levelRank, rankName, suitName, validateFollow,
+  createRng, decompose, generateFollow, groupOf, identityKey, levelRank, rankName, suitName, summarizePointCards, validateFollow,
   type Card, type GameEvent, type PlayerView, type Seat, type TrickPlay,
 } from '@shengji/engine';
 import type { ClientMessage } from '@shengji/protocol';
@@ -40,6 +40,15 @@ const ME_PLAY: PlaySlot = { x: 50, y: 83, maxW: 19 };
 const MIN_CARD_STEP = 14;
 const CENTER: Pos = { x: 50, y: 56 };
 const towardCenter = (p: Pos, t: number): Pos => ({ x: p.x + (CENTER.x - p.x) * t, y: p.y + (CENTER.y - p.y) * t });
+
+/** 分牌汇总的显示文字，例如 ♠K×2 */
+function pointSummary(cards: readonly Card[], trumpSuit: PlayerView['trumpSuit']): { key: string; label: string; red: boolean }[] {
+  return summarizePointCards(cards, trumpSuit).map(({ suit, rank, count }) => ({
+    key: `${suit}${rank}`,
+    label: `${GLYPH[suit]}${rankName(rank)}${count > 1 ? `×${count}` : ''}`,
+    red: suit === 'H' || suit === 'D',
+  }));
+}
 
 /**
  * 牌间距压到最小仍超出该座位最大宽度时的缩放比例。maxW 是牌桌宽度的百分比（cqw），vp.w 是牌桌宽度；
@@ -351,11 +360,12 @@ export function Table({ client }: { client: GameClient }) {
           {(view.opponentPointCards.length > 0 || view.pendingPointCards.length > 0) && (
             <span className="points-line">
               <span className="points-label">闲家分牌</span>
-              <span className="points-cards">
-                {view.opponentPointCards.map((c) => <CardView key={c.id} card={c} small className="mini" />)}
-                {view.pendingPointCards.map((c) => <CardView key={c.id} card={c} small dim className="mini" />)}
-              </span>
-              {view.pendingPointCards.length > 0 && <span className="points-note">暗的是身份未定的人抓的</span>}
+              {pointSummary(view.opponentPointCards, view.trumpSuit).map((p) => <span key={p.key} className={`pt ${p.red ? 'red' : ''}`}>{p.label}</span>)}
+              {view.pendingPointCards.length > 0 && (
+                <span className="pt-pending">
+                  待定{pointSummary(view.pendingPointCards, view.trumpSuit).map((p) => <span key={p.key} className={`pt ${p.red ? 'red' : ''}`}>{p.label}</span>)}
+                </span>
+              )}
             </span>
           )}
         </div>

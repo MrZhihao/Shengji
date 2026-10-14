@@ -4,7 +4,7 @@ import type { GameConfig } from './config.ts';
 import type { LevelIndex } from './levels.ts';
 import { currentTurn, dealerTeam } from './reducer.ts';
 import type { Declaration, FriendCall, GameState, Phase, RoundResult, Seat, Trick, TrickRecord } from './state.ts';
-import { sortCards } from './trump.ts';
+import { sortCards, suitDisplayOrder } from './trump.ts';
 
 export interface PlayerView {
   readonly seat: Seat;
@@ -102,4 +102,23 @@ export function viewFor(s: GameState, seat: Seat): PlayerView {
     lastRound: s.lastRound,
     winners: s.winners,
   };
+}
+
+/**
+ * 把分牌汇总成（花色, 点数, 张数），用于顶栏下的「闲家分牌」一行。
+ * 副牌按显示顺序（红黑交错），主花色排最后；同花色按 K、10、5 排。只统计 5、10、K。
+ */
+export function summarizePointCards(cards: readonly Card[], trumpSuit: Suit | null): { suit: Suit; rank: number; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const c of cards) if (c.suit !== 'J' && cardPoints(c) > 0) counts.set(`${c.suit}${c.rank}`, (counts.get(`${c.suit}${c.rank}`) ?? 0) + 1);
+  // suitDisplayOrder 不含主花色，要单独补在最后，否则主花色的分牌会被漏掉
+  const suits: Suit[] = trumpSuit ? [...suitDisplayOrder(trumpSuit), trumpSuit] : suitDisplayOrder(null);
+  const out: { suit: Suit; rank: number; count: number }[] = [];
+  for (const suit of suits) {
+    for (const rank of [13, 10, 5]) {
+      const count = counts.get(`${suit}${rank}`) ?? 0;
+      if (count > 0) out.push({ suit, rank, count });
+    }
+  }
+  return out;
 }

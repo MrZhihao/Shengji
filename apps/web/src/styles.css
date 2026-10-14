@@ -252,18 +252,13 @@ b { font-weight: 700; }
 .info-line { display: flex; align-items: center; gap: 14px; padding: 2px 10px; padding-left: calc(10px + env(safe-area-inset-left)); background: rgba(0,0,0,.16); overflow-x: auto; white-space: nowrap; min-height: 24px; }
 .info-line .friends-line { padding: 0; background: none; flex: 0 0 auto; }
 .points-line { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
-/* 闲家分牌用小号牌：只显示点数和花色，一行放得下 */
-.points-cards .card.mini { --w: 22px; width: 22px; height: 30px; border-radius: 4px; box-shadow: 0 1px 0 rgba(0,0,0,.25); }
-.points-cards .card.mini .corner.tl { top: 2px; left: 0; right: 0; }
-.points-cards .card.mini .corner .rank { font-size: 12px; }
-.points-cards .card.mini .corner .suit { font-size: 10px; margin-top: 0; }
+/* 闲家分牌：只写花色、点数、张数，例如 ♠K×2 ♥10 ♣5×3 */
+.points-line .pt { font-weight: 700; color: var(--ink); font-size: 13px; }
+.points-line .pt.red { color: #ff7a6b; }
+.pt-pending { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin-left: 4px; padding-left: 8px; border-left: 1px solid var(--line-2); }
+.pt-pending .pt { color: var(--muted); font-weight: 600; }
+.pt-pending .pt.red { color: #b9877f; }
 .points-label { font-size: 12px; color: var(--ink-2); flex: 0 0 auto; }
-.points-note { font-size: 11px; color: var(--muted); flex: 0 0 auto; }
-.points-cards { display: inline-flex; flex: 0 0 auto; }
-.points-cards .card { margin-right: -3px; }
-.points-cards .card:last-child { margin-right: 0; }
-.points-cards .card.dim { filter: saturate(.25); }
-.points-cards .card.dim::after { content: ''; position: absolute; inset: 0; background: rgba(30,48,40,.58); border-radius: inherit; }
 .host-menu { padding: 4px 8px; }
 .felt-ring { top: 6%; bottom: 8%; left: 9%; right: 9%; }
 .badge { padding: 4px 8px 4px 6px; min-width: 0; grid-template-columns: auto auto; column-gap: 8px; row-gap: 0; }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { defaultConfig, handSize } from '../src/config.ts';
 import { applyAction, createGame, restartRound } from '../src/reducer.ts';
 import { simulateGame } from '../src/sim/run.ts';
-import { viewFor } from '../src/view.ts';
+import { summarizePointCards, viewFor } from '../src/view.ts';
 import type { GameState } from '../src/state.ts';
 
 function dealAll(s: GameState): GameState {
@@ -295,6 +295,11 @@ describe('闲家得分的显示口径', () => {
         const cardPts = (cs: readonly { rank: number }[]) => cs.reduce((a, c) => a + (c.rank === 5 ? 5 : c.rank === 10 || c.rank === 13 ? 10 : 0), 0);
         // 只列分牌（5、10、K），不列其他牌
         for (const c of [...v.opponentPointCards, ...v.pendingPointCards]) expect([5, 10, 13]).toContain(c.rank);
+        // 汇总成「花色+点数×张数」后，分数合计不变（主花色的分牌不能漏）
+        const sumSummary = (cs: Parameters<typeof summarizePointCards>[0]) =>
+          summarizePointCards(cs, s.trumpSuit).reduce((a, x) => a + x.count * (x.rank === 5 ? 5 : 10), 0);
+        expect(sumSummary(v.opponentPointCards)).toBe(confirmed);
+        expect(sumSummary(v.pendingPointCards)).toBe(pending);
         expect(cardPts(v.opponentPointCards)).toBe(confirmed);
         expect(cardPts(v.pendingPointCards)).toBe(pending);
         if (pending > 0) seen = true;
