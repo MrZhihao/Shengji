@@ -293,6 +293,8 @@ describe('闲家得分的显示口径', () => {
         expect(v.visibleOpponentPoints).toBe(confirmed);
         expect(v.pendingPoints).toBe(pending);
         const cardPts = (cs: readonly { rank: number }[]) => cs.reduce((a, c) => a + (c.rank === 5 ? 5 : c.rank === 10 || c.rank === 13 ? 10 : 0), 0);
+        // 只列分牌（5、10、K），不列其他牌
+        for (const c of [...v.opponentPointCards, ...v.pendingPointCards]) expect([5, 10, 13]).toContain(c.rank);
         expect(cardPts(v.opponentPointCards)).toBe(confirmed);
         expect(cardPts(v.pendingPointCards)).toBe(pending);
         if (pending > 0) seen = true;
