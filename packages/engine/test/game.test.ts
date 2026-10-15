@@ -312,3 +312,54 @@ describe('闲家得分的显示口径', () => {
     });
   });
 });
+
+describe('自己亮的主只能加固', () => {
+  it('没人反主时，亮主的人不能改亮别的花色或王，只能用更多张同样的牌加固；被别人反了之后可以按正常规则再反', async () => {
+    const { checkDeclaration } = await import('../src/reducer.ts');
+    for (const players of [4, 5, 6] as const) {
+      const config = defaultConfig(players);
+      const level = 5;
+      const c = (suit: 'S' | 'H' | 'D' | 'C' | 'J', rank: number, deck = 0) => ({ id: `${suit}${rank}-${deck}`, suit, rank, deck });
+      const mine = { seat: 0, cards: [c('H', 5)], suit: 'H' as const, count: 1 };
+      const ctx = { config, level, declaration: mine };
+      // 换花色：不行
+      expect(checkDeclaration(ctx, 0, [c('S', 5), c('S', 5, 1)])).not.toBeNull();
+      // 换成王：不行
+      expect(checkDeclaration(ctx, 0, [c('J', 15), c('J', 15, 1)])).not.toBeNull();
+      // 同张数同花色：没意义，不行
+      expect(checkDeclaration(ctx, 0, [c('H', 5, 1)])).not.toBeNull();
+      // 加固：行
+      expect(checkDeclaration(ctx, 0, [c('H', 5), c('H', 5, 1)])).toBeNull();
+      // 别人用两张反：行
+      expect(checkDeclaration(ctx, 1, [c('S', 5), c('S', 5, 1)])).toBeNull();
+      // 被反之后，原来的人可以按正常规则再反别的花色
+      const theirs = { seat: 1, cards: [c('S', 5), c('S', 5, 1)], suit: 'S' as const, count: 2 };
+      if (config.decks >= 3) expect(checkDeclaration({ config, level, declaration: theirs }, 0, [c('D', 5), c('D', 5, 1), c('D', 5, 2)])).toBeNull();
+      else expect(checkDeclaration({ config, level, declaration: theirs }, 0, [c('J', 16), c('J', 16, 1)])).toBeNull();
+    }
+  });
+
+  it('机器人自对弈里从不改亮自己已亮的花色', () => {
+    let switches = 0, reinforces = 0;
+    // 用事件序列检查：同一个人连续两次亮主时花色必须相同
+    for (const players of [4, 5, 6] as const) {
+      for (let g = 0; g < 30; g++) {
+        let last: { seat: number; suit: string | null } | null = null;
+        let round = 0;
+        simulateGame(defaultConfig(players), `no-switch-${players}-${g}`, {
+          smartSeats: Array.from({ length: players }, (_, i) => i),
+          maxRounds: 4,
+          onEvent: (e, s) => {
+            if (s.round !== round) { round = s.round; last = null; }
+            if (e.type === 'roundRestarted') last = null;
+            if (e.type !== 'declared') return;
+            if (last && last.seat === e.seat) { if (last.suit !== e.suit) switches++; else reinforces++; }
+            last = { seat: e.seat, suit: e.suit };
+          },
+        });
+      }
+    }
+    expect(switches).toBe(0);
+    expect(reinforces).toBeGreaterThan(0);
+  }, 120_000);
+});

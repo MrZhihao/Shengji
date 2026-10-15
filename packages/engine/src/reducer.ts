@@ -8,7 +8,7 @@ import { validateLead } from './lead.ts';
 import { advanceLevel, isTopLevel, levelRank } from './levels.ts';
 import { createRng } from './rng.ts';
 import { scoreRound } from './scoring.ts';
-import type { Action, FriendCall, FriendCallSpec, GameEvent, GameState, RoundResult, Seat, Trick } from './state.ts';
+import type { Action, Declaration, FriendCall, FriendCallSpec, GameEvent, GameState, RoundResult, Seat, Trick } from './state.ts';
 import { bottomMultiplier, trickWinner, type TrickPlay } from './trick.ts';
 import type { TrumpCtx } from './trump.ts';
 import type { Decomposition } from './combos.ts';
@@ -148,39 +148,64 @@ function declarationKindRank(cards: readonly Card[]): number {
   return c.rank === 16 ? 2 : 1;
 }
 
+/** 亮主合法性的输入：服务端用完整局面，客户端用 PlayerView，两边都有这三项 */
+export interface DeclarationContext {
+  readonly config: GameConfig;
+  readonly level: number;
+  readonly declaration: Declaration | null;
+}
+
+/**
+ * 检查 seat 亮出 cards 是否合法（不检查牌是否在手里）。服务端、机器人、界面提示共用这一份规则。
+ * - 级牌一到三张同一张牌，或两三张同样的王；三副牌里三张王可以大小混
+ * - 反别人的主：张数更多；四人模式同张数时一对王盖一对级牌、一对大王盖一对小王
+ * - 自己已经亮着主、没人反过时：只能用更多张同样的牌加固，不能改亮别的花色或改亮王
+ */
+export function checkDeclaration(ctx: DeclarationContext, seat: Seat, cards: readonly Card[]): RuleError | null {
+  if (cards.length === 0) return ruleError('INVALID_DECLARATION', '没有选牌');
+  if (cards.length > 3) return ruleError('INVALID_DECLARATION', '最多亮三张');
+  const first = cards[0] as Card;
+  const allJokers = cards.every((c) => c.suit === 'J');
+  const mixedTripleJokers = allJokers && cards.length === 3 && ctx.config.decks >= 3;
+  if (!mixedTripleJokers && !cards.every((c) => identityKey(c) === identityKey(first))) {
+    return ruleError('INVALID_DECLARATION', '亮主的牌必须是同一张牌的多张，三张王可以混');
+  }
+  if (first.suit === 'J') {
+    if (cards.length < 2) return ruleError('INVALID_DECLARATION', '单张王不能亮主');
+  } else if (first.rank !== ctx.level) {
+    return ruleError('INVALID_DECLARATION', `只能用级牌亮主，当前级牌是 ${ctx.level}`);
+  }
+  const suit: Suit | null = first.suit === 'J' ? null : (first.suit as Suit);
+  const current = ctx.declaration;
+  if (!current) return null;
+  const count = cards.length;
+  if (current.seat === seat) {
+    // 自己亮的主还有效：只能加固，不能换
+    if (suit !== current.suit) return ruleError('INVALID_DECLARATION', '你已经亮了主，只能用更多张同样的牌加固，不能改亮别的花色');
+    if (count <= current.count) return ruleError('DECLARATION_TOO_WEAK', '加固要比现在亮的张数多');
+    return null;
+  }
+  if (count < current.count) return ruleError('DECLARATION_TOO_WEAK', `已有人亮了 ${current.count} 张，要反主必须更多张`);
+  if (count === current.count) {
+    if (!ctx.config.allowEqualCountOverride) return ruleError('DECLARATION_TOO_WEAK', '张数相同不能反主');
+    if (declarationKindRank(cards) <= declarationKindRank(current.cards)) {
+      return ruleError('DECLARATION_TOO_WEAK', '同张数只能用更大的王反主');
+    }
+  }
+  return null;
+}
+
 function declare(s: GameState, seat: Seat, ids: readonly string[]): ApplyResult {
   if (s.phase !== 'dealing' && s.phase !== 'declaring') return fail('WRONG_PHASE', '现在不能亮主');
   const hand = s.hands[seat];
   if (!hand) return fail('INVALID_ACTION', '座位不存在');
   const cards = findCards(hand, ids);
   if (!cards || cards.length === 0) return fail('CARDS_NOT_IN_HAND', '亮出的牌不在手中');
+  const err = checkDeclaration(s, seat, cards);
+  if (err) return { ok: false, error: err };
   const first = cards[0] as Card;
-  if (cards.length > 3) return fail('INVALID_DECLARATION', '最多亮三张');
-  const allJokers = cards.every((c) => c.suit === 'J');
-  // 三张王不论大小王混不混都可以亮；其余情况必须是同一张牌的多张
-  const mixedTripleJokers = allJokers && cards.length === 3 && s.config.decks >= 3;
-  if (!mixedTripleJokers && !cards.every((c) => identityKey(c) === identityKey(first))) {
-    return fail('INVALID_DECLARATION', '亮主的牌必须是同一张牌的多张，三张王可以混');
-  }
-  let suit: Suit | null;
-  if (first.suit === 'J') {
-    if (cards.length < 2) return fail('INVALID_DECLARATION', '单张王不能亮主');
-    suit = null;
-  } else {
-    if (first.rank !== s.level) return fail('INVALID_DECLARATION', `只能用级牌亮主，当前级牌是 ${s.level}`);
-    suit = first.suit;
-  }
-  const current = s.declaration;
+  const suit: Suit | null = first.suit === 'J' ? null : (first.suit as Suit);
   const count = cards.length;
-  if (current) {
-    if (count < current.count) return fail('DECLARATION_TOO_WEAK', `已有人亮了 ${current.count} 张，要反主必须更多张`);
-    if (count === current.count) {
-      if (!s.config.allowEqualCountOverride) return fail('DECLARATION_TOO_WEAK', '张数相同不能反主');
-      if (declarationKindRank(cards) <= declarationKindRank(current.cards)) {
-        return fail('DECLARATION_TOO_WEAK', '同张数只能用更大的王反主');
-      }
-    }
-  }
   const next: GameState = {
     ...s,
     declaration: { seat, cards, suit, count },

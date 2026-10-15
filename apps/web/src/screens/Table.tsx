@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  createRng, decompose, generateFollow, groupOf, identityKey, levelRank, rankName, suitName, summarizePointCards, validateFollow,
+  checkDeclaration, createRng, declarationCandidates, decompose, generateFollow, groupOf, identityKey, levelRank, rankName, suitName, summarizePointCards, validateFollow,
   type Card, type GameEvent, type PlayerView, type Seat, type TrickPlay,
 } from '@shengji/engine';
 import type { ClientMessage } from '@shengji/protocol';
@@ -74,49 +74,22 @@ function roleOf(view: PlayerView, seat: Seat): { text: string; cls: string } {
 
 function declarable(view: PlayerView, selected: readonly Card[]): boolean {
   if (view.phase !== 'dealing' && view.phase !== 'declaring') return false;
-  if (selected.length < 1 || selected.length > 3) return false;
-  const first = selected[0] as Card;
-  const allJokers = selected.every((c) => c.suit === 'J');
-  const mixedTriple = allJokers && selected.length === 3 && view.config.decks >= 3; // 三副牌里三张王可以混
-  if (!mixedTriple && !selected.every((c) => identityKey(c) === identityKey(first))) return false;
-  if (first.suit === 'J' ? selected.length < 2 : first.rank !== view.level) return false;
-  const current = view.declaration?.count ?? 0;
-  if (selected.length > current) return true;
-  // 四人升级：同张数时一对王盖一对级牌，一对大王盖一对小王
-  if (view.config.allowEqualCountOverride && selected.length === current && view.declaration) {
-    const kind = (c: Card) => (c.suit !== 'J' ? 0 : c.rank === 16 ? 2 : 1);
-    return kind(first) > kind(view.declaration.cards[0] as Card);
-  }
-  return false;
+  return checkDeclaration(view, view.seat, selected) === null;
 }
 
 interface DeclareOption { cards: Card[]; label: string }
 
-/** 发牌阶段手里能亮的组合：级牌 1 到 3 张、同种王 2 到 3 张、任意 3 张王；只列比当前亮主更多张的 */
+/** 一键亮主的选项：和服务端、机器人用同一份规则（engine 的 checkDeclaration） */
 function declarationOptions(view: PlayerView): DeclareOption[] {
   if (view.phase !== 'dealing' && view.phase !== 'declaring') return [];
-  const current = view.declaration?.count ?? 0;
-  const groups = new Map<string, Card[]>();
-  for (const c of view.hand) {
-    if (c.suit === 'J' || c.rank === view.level) groups.set(identityKey(c), [...(groups.get(identityKey(c)) ?? []), c]);
-  }
-  const out: DeclareOption[] = [];
-  const kind = (c: Card) => (c.suit !== 'J' ? 0 : c.rank === 16 ? 2 : 1);
-  const currentKind = view.declaration ? kind(view.declaration.cards[0] as Card) : -1;
-  for (const cards of groups.values()) {
+  return declarationCandidates(view.hand, view, view.seat).map((cards) => {
     const first = cards[0] as Card;
-    const min = first.suit === 'J' ? 2 : 1;
-    const from = view.config.allowEqualCountOverride && current >= min && kind(first) > currentKind ? current : current + 1;
-    for (let n = Math.max(min, from); n <= Math.min(3, cards.length); n++) {
-      const name = first.suit === 'J' ? (first.rank === 16 ? '大王' : '小王') : `${GLYPH[first.suit]}${rankName(first.rank)}`;
-      out.push({ cards: cards.slice(0, n), label: n === 1 ? `亮 ${name}` : `亮 ${name} × ${n}` });
-    }
-  }
-  const jokers = view.hand.filter((c) => c.suit === 'J');
-  if (view.config.decks >= 3 && jokers.length >= 3 && current < 3 && !out.some((o) => o.cards.length === 3 && o.cards[0]?.suit === 'J')) {
-    out.push({ cards: jokers.slice(0, 3), label: '亮 三张王' });
-  }
-  return out;
+    const mixed = cards.length === 3 && cards.every((c) => c.suit === 'J') && !cards.every((c) => c.rank === first.rank);
+    const name = first.suit === 'J' ? (first.rank === 16 ? '大王' : '小王') : `${GLYPH[first.suit]}${rankName(first.rank)}`;
+    const label = mixed ? '亮 三张王' : cards.length === 1 ? `亮 ${name}` : `亮 ${name} × ${cards.length}`;
+    const mine = view.declaration?.seat === view.seat;
+    return { cards, label: mine ? label.replace('亮', '加固') : label };
+  });
 }
 
 function statusText(view: PlayerView, name: (s: Seat) => string): string {

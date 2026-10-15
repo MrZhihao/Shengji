@@ -2,7 +2,7 @@
 import { RANKS, SUITS, identityKey, type Card, type Suit } from './cards.ts';
 import { decompose } from './combos.ts';
 import { generateFollow } from './follow.ts';
-import { ctxOf, currentTurn } from './reducer.ts';
+import { checkDeclaration, ctxOf, currentTurn, type DeclarationContext } from './reducer.ts';
 import type { Rng } from './rng.ts';
 import type { Action, FriendCallSpec, GameState, Seat } from './state.ts';
 import { groupOf, type Group } from './trump.ts';
@@ -18,33 +18,32 @@ export const defaultBotOptions: BotOptions = { declareProbability: 0.5, throwPro
 
 /** 手中所有可以压过当前亮主的亮法。 */
 export function possibleDeclarations(s: GameState, seat: Seat): Card[][] {
-  const hand = s.hands[seat] ?? [];
+  return declarationCandidates(s.hands[seat] ?? [], s, seat);
+}
+
+/**
+ * 手里所有可能的亮法（每种身份 1 到 3 张、三副牌时三张混王），再用 checkDeclaration 过滤掉不合法的。
+ * 机器人和界面的一键亮主提示都用它，规则只在 checkDeclaration 一处。
+ */
+export function declarationCandidates(hand: readonly Card[], ctx: DeclarationContext, seat: Seat): Card[][] {
   const groups = new Map<string, Card[]>();
   for (const c of hand) {
-    if (c.suit === 'J' || c.rank === s.level) {
+    if (c.suit === 'J' || c.rank === ctx.level) {
       const k = identityKey(c);
       const arr = groups.get(k);
       if (arr) arr.push(c);
       else groups.set(k, [c]);
     }
   }
-  const current = s.declaration?.count ?? 0;
-  const kindRank = (c: Card) => (c.suit !== 'J' ? 0 : c.rank === 16 ? 2 : 1);
-  const currentKind = s.declaration ? kindRank(s.declaration.cards[0] as Card) : -1;
-  const out: Card[][] = [];
+  const raw: Card[][] = [];
   for (const cards of groups.values()) {
-    const first = cards[0] as Card;
-    const min = first.suit === 'J' ? 2 : 1;
-    // 同张数盖牌（四人升级）：一对王盖一对级牌，一对大王盖一对小王
-    const from = s.config.allowEqualCountOverride && current >= min && kindRank(first) > currentKind ? current : current + 1;
-    for (let n = Math.max(min, from); n <= Math.min(3, cards.length); n++) out.push(cards.slice(0, n));
+    for (let n = 1; n <= Math.min(3, cards.length); n++) raw.push(cards.slice(0, n));
   }
-  // 三副牌里三张王可以大小混着亮
   const jokers = hand.filter((c) => c.suit === 'J');
-  if (s.config.decks >= 3 && jokers.length >= 3 && current < 3 && !out.some((o) => o.length === 3 && (o[0] as Card).suit === 'J')) {
-    out.push(jokers.slice(0, 3));
+  if (ctx.config.decks >= 3 && jokers.length >= 3 && !raw.some((o) => o.length === 3 && (o[0] as Card).suit === 'J')) {
+    raw.push(jokers.slice(0, 3));
   }
-  return out;
+  return raw.filter((cards) => checkDeclaration(ctx, seat, cards) === null);
 }
 
 export function botDeclare(s: GameState, seat: Seat, rng: Rng, opts: BotOptions = defaultBotOptions): Action | null {
