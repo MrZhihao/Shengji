@@ -1,6 +1,6 @@
 /** 一局回放：按墩列出每个人出的牌、赢家和分数，并可展开各人起手牌。 */
 import { useMemo, useState } from 'react';
-import { applyAction, rankName, sortCards, suitName, type Card, type GameState, type Seat } from '@shengji/engine';
+import { applyAction, rankName, sortCardsDesc, suitName, type Card, type GameState, type Seat } from '@shengji/engine';
 import type { RoundReplay } from '@shengji/protocol';
 import { CardRow } from '../components/CardView.tsx';
 
@@ -19,6 +19,20 @@ interface Rebuilt {
   readonly hands: readonly (readonly Card[])[];
   readonly tricks: readonly TrickView[];
   readonly error: string | null;
+  /** 本局的级牌与主花色，用来把牌从大到小排 */
+  readonly ctx: { level: number; trumpSuit: GameState['trumpSuit'] };
+}
+
+/** 本局出牌时的级牌和主花色（局终状态里这两项可能已经换成下一局的） */
+function roundCtx(replay: RoundReplay): Rebuilt['ctx'] {
+  let s = replay.initial;
+  for (const a of replay.actions) {
+    const r = applyAction(s, a);
+    if (!r.ok) break;
+    s = r.state;
+    if (s.phase === 'playing') return { level: s.level, trumpSuit: s.trumpSuit };
+  }
+  return { level: s.level, trumpSuit: s.trumpSuit };
 }
 
 function rebuild(replay: RoundReplay): Rebuilt {
@@ -31,8 +45,10 @@ function rebuild(replay: RoundReplay): Rebuilt {
   for (const a of replay.actions) {
     const r = applyAction(s, a);
     if (!r.ok) { error = `${a.type}: ${r.error.message}`; break; }
-    if (a.type === 'callFriend' && !hands) {
-      hands = r.state.hands.map((h) => sortCards(h, { level: r.state.level, trumpSuit: r.state.trumpSuit }));
+    // 起手牌：找朋友在叫完朋友时记下；四人对家没有叫朋友，扣完底就记下
+    const handsReady = a.type === 'callFriend' || (a.type === 'exchangeBottom' && r.state.config.friendCount === 0);
+    if (handsReady && !hands) {
+      hands = r.state.hands.map((h) => sortCardsDesc(h, { level: r.state.level, trumpSuit: r.state.trumpSuit }));
     }
     for (const e of r.events) {
       if (e.type === 'friendRevealed') revealed.push(e.seat);
@@ -46,7 +62,7 @@ function rebuild(replay: RoundReplay): Rebuilt {
     }
     s = r.state;
   }
-  return { final: s, hands: hands ?? s.hands, tricks, error };
+  return { final: s, hands: hands ?? s.hands, tricks, error, ctx: roundCtx(replay) };
 }
 
 export function Replay({ replay, onClose }: { replay: RoundReplay; onClose: () => void }) {
@@ -81,7 +97,7 @@ export function Replay({ replay, onClose }: { replay: RoundReplay; onClose: () =
             {st.bottom.length > 0 && (
               <div className="replay-hand">
                 <div className="rp-seat">底牌</div>
-                <div className="rp-cards"><CardRow cards={st.bottom} small /></div>
+                <div className="rp-cards"><CardRow cards={sortCardsDesc(st.bottom, built.ctx)} small /></div>
               </div>
             )}
           </div>
@@ -99,7 +115,7 @@ export function Replay({ replay, onClose }: { replay: RoundReplay; onClose: () =
                 {t.plays.map((p) => (
                   <div key={p.seat} className={`trick-play ${p.seat === t.winner ? 'won' : ''} ${p.seat === t.leader ? 'led' : ''}`}>
                     <div className="tp-name"><span className={`role ${roleCls(p.seat)}`}>{roleTxt(p.seat)}</span>{name(p.seat)}</div>
-                    <CardRow cards={p.cards} small />
+                    <CardRow cards={sortCardsDesc(p.cards, built.ctx)} small />
                   </div>
                 ))}
               </div>

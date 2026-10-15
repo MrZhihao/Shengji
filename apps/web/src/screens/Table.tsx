@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  checkDeclaration, createRng, declarationCandidates, decompose, generateFollow, groupOf, identityKey, levelRank, rankName, suitName, summarizePointCards, trickWinner, validateFollow,
+  checkDeclaration, createRng, declarationCandidates, decompose, generateFollow, groupOf, identityKey, levelRank, rankName, sortCardsDesc, suitName, summarizePointCards, trickWinner, validateFollow,
   type Card, type GameEvent, type PlayerView, type Seat, type TrickPlay,
 } from '@shengji/engine';
 import type { ClientMessage } from '@shengji/protocol';
@@ -252,7 +252,8 @@ export function Table({ client }: { client: GameClient }) {
   const toggle = (id: string) => { sound.unlock(); setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id])); };
   const send = (m: ClientMessage) => client.send(m);
   const ctx = { level: view.level, trumpSuit: view.trumpSuit };
-  const handRows = useMemo(() => splitHand(view.hand, ctx, 1), [view.hand, view.level, view.trumpSuit]);
+  // 手牌从大到小、从左到右：view.hand 是从小到大排好的，倒过来显示
+  const handRows = useMemo(() => splitHand([...view.hand].reverse(), ctx, 1), [view.hand, view.level, view.trumpSuit]);
 
   // 跟牌辅助：即时校验 + 灰显不该出的牌
   const lead = view.trick?.lead ?? null;
@@ -411,7 +412,7 @@ export function Table({ client }: { client: GameClient }) {
               className={`play ${lingering ? 'collect' : ''} ${peeking ? 'peek' : ''} ${shownWinner === p.seat ? 'won' : ''}`}
               style={style}
             >
-              <CardRow cards={p.cards} small />
+              <CardRow cards={sortCardsDesc(p.cards, ctx)} small />
             </div>
           );
         })}

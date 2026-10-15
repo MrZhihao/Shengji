@@ -1,4 +1,4 @@
-import { levelRank, rankName, type PlayerView } from '@shengji/engine';
+import { levelRank, rankName, sortCardsDesc, type PlayerView } from '@shengji/engine';
 import type { RoomInfo } from '@shengji/protocol';
 import { CardRow } from './CardView.tsx';
 
@@ -33,7 +33,7 @@ export function RoundEnd({ view, room, onNext, onReplay, onLeave, onLobby }: {
           </tbody>
         </table>
         <div className="label">底牌</div>
-        <CardRow cards={r.bottomCards} small />
+        <CardRow cards={sortCardsDesc(r.bottomCards, { level: view.level, trumpSuit: view.trumpSuit })} small />
         <div className="label">各人等级与抓分</div>
         <div className="levels">
           {r.levelsAfter.map((l, i) => {

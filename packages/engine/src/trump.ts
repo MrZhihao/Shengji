@@ -80,4 +80,9 @@ export function sortCards(cards: readonly Card[], ctx: TrumpCtx): Card[] {
   });
 }
 
+/** 显示用的排序：从大到小、从左到右（主牌在最左，大王打头；副牌按花色顺序倒过来，每门从 A 到 2） */
+export function sortCardsDesc(cards: readonly Card[], ctx: TrumpCtx): Card[] {
+  return sortCards(cards, ctx).reverse();
+}
+
 export { ACE };
