@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  checkDeclaration, createRng, declarationCandidates, decompose, generateFollow, groupOf, identityKey, levelRank, rankName, suitName, summarizePointCards, validateFollow,
+  checkDeclaration, createRng, declarationCandidates, decompose, generateFollow, groupOf, identityKey, levelRank, rankName, suitName, summarizePointCards, trickWinner, validateFollow,
   type Card, type GameEvent, type PlayerView, type Seat, type TrickPlay,
 } from '@shengji/engine';
 import type { ClientMessage } from '@shengji/protocol';
@@ -302,6 +302,15 @@ export function Table({ client }: { client: GameClient }) {
   const shownPlays: readonly TrickPlay[] = peeking ? peeking.plays : lingering ? lingering.plays : currentPlays;
   const winnerPos = lingering ? posOf(lingering.winner) : null;
   const canPeek = view.phase === 'playing' && view.lastTrick !== null;
+  // 桌上正在显示的那一墩目前谁最大：查看上一轮或上一墩收走时就是赢家；进行中的墩用引擎的 trickWinner 实时算
+  const shownWinner: Seat | null = (() => {
+    if (peeking) return peeking.winner;
+    if (lingering) return lingering.winner;
+    const lead = view.trick?.lead;
+    if (!lead || currentPlays.length === 0) return null;
+    const idx = trickWinner(currentPlays, lead, { level: view.level, trumpSuit: view.trumpSuit });
+    return currentPlays[idx]?.seat ?? null;
+  })();
   // 「首」标在桌上正在显示的那一墩的首家：查看上一轮时是上一墩的首家，否则是当前这一墩的
   const shownLeader: Seat | null = peeking ? peeking.leader : currentPlays.length > 0 ? (view.trick?.leader ?? null) : null;
 
@@ -370,7 +379,7 @@ export function Table({ client }: { client: GameClient }) {
           const s = room.seats[seat];
           const isTurn = view.currentTurn === seat;
           return (
-            <div key={seat} className={`badge ${isTurn ? 'turn' : ''} ${role.cls}`} style={pct(posOf(seat))}>
+            <div key={seat} data-seat={seat} className={`badge ${isTurn ? 'turn' : ''} ${role.cls}`} style={pct(posOf(seat))}>
               <span className="b-avatar"><Avatar name={name(seat)} isBot={Boolean(s?.isBot)} size={40} /><span className={`role role-dot ${role.cls}`}>{role.text}</span></span>
               <span className="b-name">{name(seat)}</span>
               <span className="b-meta">
@@ -398,7 +407,8 @@ export function Table({ client }: { client: GameClient }) {
           return (
             <div
               key={`${p.seat}-${peeking ? 'p' : lingering ? 'l' : 'c'}`}
-              className={`play ${lingering ? 'collect' : ''} ${peeking ? 'peek' : ''} ${peeking && peeking.winner === p.seat ? 'won' : ''}`}
+              data-seat={p.seat}
+              className={`play ${lingering ? 'collect' : ''} ${peeking ? 'peek' : ''} ${shownWinner === p.seat ? 'won' : ''}`}
               style={style}
             >
               <CardRow cards={p.cards} small />
