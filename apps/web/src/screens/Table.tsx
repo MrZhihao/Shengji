@@ -302,6 +302,8 @@ export function Table({ client }: { client: GameClient }) {
   const shownPlays: readonly TrickPlay[] = peeking ? peeking.plays : lingering ? lingering.plays : currentPlays;
   const winnerPos = lingering ? posOf(lingering.winner) : null;
   const canPeek = view.phase === 'playing' && view.lastTrick !== null;
+  // 「首」标在桌上正在显示的那一墩的首家：查看上一轮时是上一墩的首家，否则是当前这一墩的
+  const shownLeader: Seat | null = peeking ? peeking.leader : currentPlays.length > 0 ? (view.trick?.leader ?? null) : null;
 
   const pct = (p: Pos): React.CSSProperties => ({ left: `${p.x}%`, top: `${p.y}%` });
 
@@ -374,7 +376,7 @@ export function Table({ client }: { client: GameClient }) {
               <span className="b-meta">
                 <span className="b-level">{rankName(levelRank(view.levels[seat] ?? 0, view.config))}</span>
                 <span className="b-count">{view.handCounts[seat]}</span>
-                {view.trick?.leader === seat && currentPlays.length > 0 && <span className="b-lead">首</span>}
+                {shownLeader === seat && <span className="b-lead" title="这一墩是他先出的">首</span>}
                 {s && !s.connected && <span className="b-off">离线</span>}
               </span>
             </div>
@@ -431,6 +433,7 @@ export function Table({ client }: { client: GameClient }) {
           <span className="b-name">{name(me)}</span>
           <span className="b-level">{rankName(levelRank(view.levels[me] ?? 0, view.config))}</span>
           <span className="b-count">{view.hand.length}</span>
+          {shownLeader === me && <span className="b-lead" title="这一墩是你先出的">首</span>}
           {playHint && <span className="play-hint">{playHint}</span>}
           {selected.length > 0 && <button className="ghost tiny" onClick={() => setSelected([])}>清除</button>}
         </div>
