@@ -35,3 +35,29 @@ describe('结算阶梯', () => {
     expect(levelRank(advanceLevel(11, 5))).toBe(14);
   });
 });
+
+describe('四人升级的等级阶梯', () => {
+  const cfg = defaultConfig(4);
+  const idx = (rank: number) => (cfg.levelSequence as readonly number[]).indexOf(rank);
+  const up = (from: number, steps: number) => levelRank(advanceLevel(idx(from), steps, cfg), cfg);
+  it('从 2 开始、A 结束', () => {
+    expect(levelRank(0, cfg)).toBe(2);
+    expect(up(13, 3)).toBe(14);
+    expect(up(14, 2)).toBe(14);
+  });
+  it('第一次到 5、10、K 不能跳过', () => {
+    expect(up(4, 2)).toBe(5);
+    expect(up(3, 3)).toBe(5);
+    expect(up(2, 1)).toBe(3);
+    expect(up(5, 2)).toBe(7);
+    expect(up(8, 3)).toBe(10);
+    expect(up(10, 2)).toBe(12);
+    expect(up(12, 3)).toBe(13);
+    expect(up(13, 1)).toBe(14);
+  });
+  it('找朋友的阶梯不变', () => {
+    const f = defaultConfig(6);
+    expect(levelRank(advanceLevel(0, 2, f), f)).toBe(13);
+    expect(levelRank(advanceLevel(2, 2, f), f)).toBe(3);
+  });
+});

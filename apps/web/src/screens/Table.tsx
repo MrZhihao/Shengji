@@ -372,7 +372,7 @@ export function Table({ client }: { client: GameClient }) {
               <span className="b-avatar"><Avatar name={name(seat)} isBot={Boolean(s?.isBot)} size={40} /><span className={`role role-dot ${role.cls}`}>{role.text}</span></span>
               <span className="b-name">{name(seat)}</span>
               <span className="b-meta">
-                <span className="b-level">{rankName(levelRank(view.levels[seat] ?? 0))}</span>
+                <span className="b-level">{rankName(levelRank(view.levels[seat] ?? 0, view.config))}</span>
                 <span className="b-count">{view.handCounts[seat]}</span>
                 {view.trick?.leader === seat && currentPlays.length > 0 && <span className="b-lead">首</span>}
                 {s && !s.connected && <span className="b-off">离线</span>}
@@ -429,7 +429,7 @@ export function Table({ client }: { client: GameClient }) {
         <div className="me-head">
           <span className={`role ${roleOf(view, me).cls}`}>{roleOf(view, me).text}</span>
           <span className="b-name">{name(me)}</span>
-          <span className="b-level">{rankName(levelRank(view.levels[me] ?? 0))}</span>
+          <span className="b-level">{rankName(levelRank(view.levels[me] ?? 0, view.config))}</span>
           <span className="b-count">{view.hand.length}</span>
           {playHint && <span className="play-hint">{playHint}</span>}
           {selected.length > 0 && <button className="ghost tiny" onClick={() => setSelected([])}>清除</button>}

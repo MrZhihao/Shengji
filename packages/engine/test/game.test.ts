@@ -122,8 +122,9 @@ describe('整局流程', () => {
 
   it('叫朋友的约束', () => {
     let s = dealAll(createGame(defaultConfig(6), 'friend'));
-    const seat = s.hands.findIndex((h) => h.some((c) => c.rank === 5 && c.suit !== 'J'));
-    const card = s.hands[seat]!.find((c) => c.rank === 5 && c.suit !== 'J')!;
+    expect(s.level).toBe(s.config.players === 4 ? 2 : 5); // 四人升级从 2 开始，找朋友从 5 开始
+    const seat = s.hands.findIndex((h) => h.some((c) => c.rank === s.level && c.suit !== 'J'));
+    const card = s.hands[seat]!.find((c) => c.rank === s.level && c.suit !== 'J')!;
     s = must(applyAction(s, { type: 'declare', seat, cards: [card.id] }));
     s = must(applyAction(s, { type: 'closeDeclaring' }));
     expect(s.phase).toBe('bottom');
@@ -150,8 +151,9 @@ describe('整局流程', () => {
 describe('重发本局', () => {
   it('首局重发：庄家清空，牌重新洗过', () => {
     let s = dealAll(createGame(defaultConfig(6), 'restart'));
-    const seat = s.hands.findIndex((h) => h.some((c) => c.rank === 5 && c.suit !== 'J'));
-    const card = s.hands[seat]!.find((c) => c.rank === 5 && c.suit !== 'J')!;
+    expect(s.level).toBe(s.config.players === 4 ? 2 : 5); // 四人升级从 2 开始，找朋友从 5 开始
+    const seat = s.hands.findIndex((h) => h.some((c) => c.rank === s.level && c.suit !== 'J'));
+    const card = s.hands[seat]!.find((c) => c.rank === s.level && c.suit !== 'J')!;
     s = must(applyAction(s, { type: 'declare', seat, cards: [card.id] }));
     const before = s.hands[0]!.map((c) => c.id);
     const r = restartRound(s);
@@ -227,8 +229,9 @@ describe('四人对家模式', () => {
     let s = dealAll(createGame(cfg, 'p4-flow'));
     expect(s.hands.every((h) => h.length === 25)).toBe(true);
     expect(s.bottom.length).toBe(8);
-    const seat = s.hands.findIndex((h) => h.some((c) => c.rank === 5 && c.suit !== 'J'));
-    const card = s.hands[seat]!.find((c) => c.rank === 5 && c.suit !== 'J')!;
+    expect(s.level).toBe(s.config.players === 4 ? 2 : 5); // 四人升级从 2 开始，找朋友从 5 开始
+    const seat = s.hands.findIndex((h) => h.some((c) => c.rank === s.level && c.suit !== 'J'));
+    const card = s.hands[seat]!.find((c) => c.rank === s.level && c.suit !== 'J')!;
     s = must(applyAction(s, { type: 'declare', seat, cards: [card.id] }));
     s = must(applyAction(s, { type: 'closeDeclaring' }));
     expect(s.hands[seat]!.length).toBe(33);
@@ -242,10 +245,11 @@ describe('四人对家模式', () => {
 
   it('四人升级：不能三张亮主，一对王能盖一对级牌，一对大王能盖一对小王', () => {
     let s = dealAll(createGame(defaultConfig(4), 'p4-declare'));
-    const levelSeat = s.hands.findIndex((h) => h.filter((c) => c.rank === 5 && c.suit === 'S').length >= 2);
+    const L = s.level;
+    const levelSeat = s.hands.findIndex((h) => h.filter((c) => c.rank === L && c.suit === 'S').length >= 2);
     const jokerSeat = s.hands.findIndex((h, i) => i !== levelSeat && h.filter((c) => c.rank === 15).length >= 2);
     if (levelSeat < 0 || jokerSeat < 0) return;
-    const pair = s.hands[levelSeat]!.filter((c) => c.rank === 5 && c.suit === 'S').slice(0, 2);
+    const pair = s.hands[levelSeat]!.filter((c) => c.rank === L && c.suit === 'S').slice(0, 2);
     s = must(applyAction(s, { type: 'declare', seat: levelSeat, cards: pair.map((c) => c.id) }));
     const smalls = s.hands[jokerSeat]!.filter((c) => c.rank === 15).slice(0, 2);
     s = must(applyAction(s, { type: 'declare', seat: jokerSeat, cards: smalls.map((c) => c.id) }));
@@ -361,5 +365,27 @@ describe('自己亮的主只能加固', () => {
     }
     expect(switches).toBe(0);
     expect(reinforces).toBeGreaterThan(0);
+  }, 120_000);
+});
+
+describe('四人升级：在庄上打过 A 才赢', () => {
+  it('整局结束时，赢家一定是在 A 上坐庄并守住的那一队', () => {
+    let finished = 0;
+    for (let g = 0; g < 20; g++) {
+      let lastScored: import('../src/state.ts').RoundResult | null = null;
+      const st = simulateGame(defaultConfig(4), `p4-ace-${g}`, {
+        smartSeats: [0, 1, 2, 3],
+        onEvent: (e) => { if (e.type === 'roundScored') lastScored = e.result; },
+      });
+      if (!st.gameOver) continue;
+      finished++;
+      const r = lastScored as unknown as import('../src/state.ts').RoundResult;
+      expect(r.gameOver).toBe(true);
+      expect(r.dealerHeld).toBe(true);
+      // 庄家这一局开始时就在 A（下标 12）
+      expect(r.levelsBefore[r.dealer]).toBe(12);
+      expect([...(st.winners ?? [])].sort()).toEqual([...r.dealerTeam].sort());
+    }
+    expect(finished).toBeGreaterThan(0);
   }, 120_000);
 });

@@ -1,3 +1,4 @@
+import { LEVEL_SEQUENCE, PARTNERS_LEVEL_SEQUENCE, PARTNERS_LEVEL_STOPS } from './levels.ts';
 /** 一局游戏的规则配置。存在地方差异的规则全部放在这里。 */
 
 export type PlayerCount = 4 | 5 | 6;
@@ -30,6 +31,10 @@ export interface GameConfig {
   readonly dealerCountsForFriend: boolean;
   /** 首局无人亮主时重发 */
   readonly redealIfNoDeclarerFirstRound: boolean;
+  /** 等级阶梯（点数），下标 0 是起点、最后一个是 A。旧存档里没有这一项时按找朋友的阶梯 */
+  readonly levelSequence?: readonly number[];
+  /** 升级时不能越过的级别（点数） */
+  readonly levelStops?: readonly number[];
 }
 
 export const TOTAL_POINTS_PER_DECK = 100;
@@ -50,6 +55,9 @@ export function defaultConfig(players: PlayerCount): GameConfig {
       allowEqualCountOverride: true,
       dealerCountsForFriend: true,
       redealIfNoDeclarerFirstRound: true,
+      // 四人升级从 2 打到 A；第一次到 5、10、K 不能跳过
+      levelSequence: PARTNERS_LEVEL_SEQUENCE,
+      levelStops: PARTNERS_LEVEL_STOPS,
     };
   }
   const five = players === 5;
@@ -65,6 +73,8 @@ export function defaultConfig(players: PlayerCount): GameConfig {
     allowEqualCountOverride: false,
     dealerCountsForFriend: true,
     redealIfNoDeclarerFirstRound: true,
+    levelSequence: LEVEL_SEQUENCE,
+    levelStops: [],
   };
 }
 

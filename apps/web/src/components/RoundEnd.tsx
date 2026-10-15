@@ -45,7 +45,7 @@ export function RoundEnd({ view, room, onNext, onReplay, onLeave, onLobby }: {
                 <span className={`role ${i === r.dealer ? 'dealer' : r.dealerTeam.includes(i) ? 'friend' : 'opp'}`}>{team}</span>
                 <span>{name(i)}</span>
                 <span className="pts">{view.captured[i] ?? 0} 分</span>
-                <span className="lv">{up ? <>{rankName(levelRank(before))}<span className="arrow">→</span>{rankName(levelRank(l))}</> : rankName(levelRank(l))}</span>
+                <span className="lv">{up ? <>{rankName(levelRank(before, view.config))}<span className="arrow">→</span>{rankName(levelRank(l, view.config))}</> : rankName(levelRank(l, view.config))}</span>
               </div>
             );
           })}

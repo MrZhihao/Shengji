@@ -54,7 +54,7 @@ export function createGame(config: GameConfig, seed: string, opts: CreateOptions
     phase: 'dealing',
     levels: Array.from({ length: n }, () => 0),
     dealer: null,
-    level: levelRank(0),
+    level: levelRank(0, config),
     trumpSuit: null,
     trumpDecided: false,
     declaration: null,
@@ -388,11 +388,12 @@ function endRound(s: GameState, lastWinner: Seat, lastLead: Decomposition, event
 
   const { dealerHeld, levelsUp } = scoreRound(opponentPoints, s.config);
   const winnersTeam = dealerHeld ? team : opponents;
-  const gameOver = dealerHeld && isTopLevel(s.levels[dealer] as number);
+  // 庄家在 A 上守住才算赢下整局（四人升级：打过 A 必须在庄上赢）
+  const gameOver = dealerHeld && isTopLevel(s.levels[dealer] as number, s.config);
   const levelsBefore = [...s.levels];
   let levels = [...s.levels];
   if (!gameOver) {
-    for (const w of winnersTeam) levels[w] = advanceLevel(levels[w] as number, levelsUp);
+    for (const w of winnersTeam) levels[w] = advanceLevel(levels[w] as number, levelsUp, s.config);
   }
 
   let nextDealer = dealer;
@@ -443,7 +444,7 @@ export function restartRound(s: GameState): { state: GameState; events: GameEven
   const base: GameState = {
     ...s,
     dealer,
-    level: dealer === null ? levelRank(0) : levelRank(s.levels[dealer] as number),
+    level: dealer === null ? levelRank(0, s.config) : levelRank(s.levels[dealer] as number, s.config),
     redeals: s.redeals + 1,
     winners: null,
   };
@@ -459,7 +460,7 @@ function nextRound(s: GameState): ApplyResult {
     round: s.round + 1,
     redeals: 0,
     dealer,
-    level: levelRank(s.levels[dealer] as number),
+    level: levelRank(s.levels[dealer] as number, s.config),
   };
   const next = startDealing(base, nextSeat(s, dealer));
   return ok(next, [{ type: 'dealerChanged', dealer }]);
