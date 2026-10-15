@@ -141,7 +141,7 @@ b { font-weight: 700; }
 .hand .card.dim { filter: saturate(.25); }
 .hand .card.dim::after { content: ''; position: absolute; inset: 0; background: rgba(30, 48, 40, .58); border-radius: inherit; pointer-events: none; }
 /* 不用 both 填充：动画结束后要交还给 .selected 的 transform，否则刚发到的牌选中后抬不起来 */
-.hand .card.dealt { animation: deal-in .35s cubic-bezier(.2,.8,.2,1); }
+.hand .card.dealt { animation: deal-in .25s cubic-bezier(.2,.8,.2,1); }
 .actions { display: flex; gap: 10px; justify-content: flex-end; align-items: center; }
 .actions .primary { min-width: 128px; }
 
