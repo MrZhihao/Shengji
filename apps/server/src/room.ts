@@ -30,7 +30,7 @@ export interface RoomOptions {
   readonly searchBudgetMs: number;
 }
 
-export const defaultRoomOptions: RoomOptions = { dealIntervalMs: 75, declareGraceMs: 5000, botDelayMs: 900, searchBudgetMs: 1100 };
+export const defaultRoomOptions: RoomOptions = { dealIntervalMs: 150, declareGraceMs: 5000, botDelayMs: 900, searchBudgetMs: 1100 };
 
 export class Room {
   readonly code: string;
