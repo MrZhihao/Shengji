@@ -332,16 +332,15 @@ export function Table({ client }: { client: GameClient }) {
         <span className="tb-item">级 <b>{rankName(view.level)}</b></span>
         <button className="tb-item tb-click" onClick={() => setSheet('declarations')} title="亮主记录">
           主 <b className={view.trumpSuit === 'H' || view.trumpSuit === 'D' ? 'red' : ''}>{view.trumpDecided ? suitName(view.trumpSuit) : '未定'}</b>
-          {view.declarationLog.length > 0 && <span className="tb-count">{view.declarationLog.length}</span>}
-          <span className="tb-caret">▾</span>
+          <span className="tb-action">记录{view.declarationLog.length > 0 ? ` ${view.declarationLog.length}` : ''}</span>
         </button>
         <span className="tb-item">闲家 <b>{view.visibleOpponentPoints}</b>{view.pendingPoints > 0 && <span className="pending"> 待定 {view.pendingPoints}</span>}</span>
         {myBottom ? (
-          <button className="tb-item tb-click" onClick={() => setSheet('bottom')} title="看我扣的底">底 {view.bottomCount}<span className="tb-caret">▾</span></button>
+          <button className="tb-item tb-click" onClick={() => setSheet('bottom')} title="看我扣的底">底 {view.bottomCount}<span className="tb-action">看底</span></button>
         ) : (
           <span className="tb-item">底 {view.bottomCount}{view.phase === 'dealing' ? ` · 剩 ${view.deckRemaining}` : ''}</span>
         )}
-        <button className="tb-btn" onClick={() => setSoundOn(sound.toggle())} aria-label="音效">{soundOn ? '🔊' : '🔇'}</button>
+        <button className={`tb-item tb-click tb-sound ${soundOn ? '' : 'off'}`} onClick={() => setSoundOn(sound.toggle())} aria-label="音效">{soundOn ? '🔊 音效' : '🔇 静音'}</button>
         <button className={`tb-menu ${menuOpen ? 'open' : ''}`} onClick={() => setMenuOpen((v) => !v)} aria-label="菜单" aria-expanded={menuOpen}>⋯ 菜单</button>
       </header>
       {menuOpen && (
