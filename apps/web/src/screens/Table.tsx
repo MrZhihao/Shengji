@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  checkDeclaration, createRng, declarationCandidates, decompose, generateFollow, groupOf, identityKey, levelRank, rankName, sortCardsDesc, suitName, summarizePointCards, trickWinner, validateFollow,
+  checkDeclaration, createRng, declarationCandidates, decompose, generateFollow, groupOf, identityKey, levelRank, rankName, sortCardsDesc, summarizePointCards, trickWinner, validateFollow,
   type Card, type GameEvent, type PlayerView, type Seat, type TrickPlay,
 } from '@shengji/engine';
 import type { ClientMessage } from '@shengji/protocol';
@@ -15,7 +15,8 @@ import { Avatar } from '../avatar.tsx';
 import { sound } from '../sound.ts';
 import type { GameClient } from '../ws.ts';
 
-const GLYPH: Record<string, string> = { S: '♠', H: '♥', D: '♦', C: '♣' };
+import { CardNotation, SuitSymbol, TrumpLabel } from '../components/SuitText.tsx';
+import { penaltySummary } from '../penaltySummary.ts';
 const CN_NTH = ['一', '二', '三'];
 
 interface Pos { x: number; y: number }
@@ -45,15 +46,6 @@ const MIN_CARD_STEP = 14;
 const CENTER: Pos = { x: 50, y: 56 };
 const towardCenter = (p: Pos, t: number): Pos => ({ x: p.x + (CENTER.x - p.x) * t, y: p.y + (CENTER.y - p.y) * t });
 
-/** 分牌汇总的显示文字，例如 ♠K×2 */
-function pointSummary(cards: readonly Card[], trumpSuit: PlayerView['trumpSuit']): { key: string; label: string; red: boolean }[] {
-  return summarizePointCards(cards, trumpSuit).map(({ suit, rank, count }) => ({
-    key: `${suit}${rank}`,
-    label: `${GLYPH[suit]}${rankName(rank)}${count > 1 ? `×${count}` : ''}`,
-    red: suit === 'H' || suit === 'D',
-  }));
-}
-
 /**
  * 牌间距压到最小仍超出该座位最大宽度时的缩放比例。maxW 是牌桌宽度的百分比（cqw），vp.w 是牌桌宽度；
  * 牌宽与 styles.css 一致：屏幕高 600 以上 60px，否则 48px
@@ -81,7 +73,7 @@ function declarable(view: PlayerView, selected: readonly Card[]): boolean {
   return checkDeclaration(view, view.seat, selected) === null;
 }
 
-interface DeclareOption { cards: Card[]; label: string }
+interface DeclareOption { key: string; cards: Card[]; label: ReactNode }
 
 /** 一键亮主的选项：和服务端、机器人用同一份规则（engine 的 checkDeclaration） */
 function declarationOptions(view: PlayerView): DeclareOption[] {
@@ -89,21 +81,24 @@ function declarationOptions(view: PlayerView): DeclareOption[] {
   return declarationCandidates(view.hand, view, view.seat).map((cards) => {
     const first = cards[0] as Card;
     const mixed = cards.length === 3 && cards.every((c) => c.suit === 'J') && !cards.every((c) => c.rank === first.rank);
-    const name = first.suit === 'J' ? (first.rank === 16 ? '大王' : '小王') : `${GLYPH[first.suit]}${rankName(first.rank)}`;
-    const label = mixed ? '亮 三张王' : cards.length === 1 ? `亮 ${name}` : `亮 ${name} × ${cards.length}`;
     const mine = view.declaration?.seat === view.seat;
-    return { cards, label: mine ? label.replace('亮', '加固') : label };
+    const actionLabel = mine ? '加固' : '亮';
+    return {
+      key: `${actionLabel}:${cards.map(c => c.id).join(',')}`,
+      cards,
+      label: <>{actionLabel} {mixed ? '三张王' : <CardNotation suit={first.suit} rank={first.rank} count={cards.length} />}</>,
+    };
   });
 }
 
-function statusText(view: PlayerView, name: (s: Seat) => string): string {
+function statusContent(view: PlayerView, name: (s: Seat) => string): ReactNode {
   const me = view.seat;
   switch (view.phase) {
     case 'dealing': return view.declaration ? `${name(view.declaration.seat)} 亮了 ${view.declaration.count} 张，更多张可以反` : '发牌中，有级牌或对王可以亮主';
     case 'declaring': {
       // 反主只改主花色，不改庄家：只有首局才是先亮主者坐庄
       const dealerText = view.dealer !== null ? `，${name(view.dealer)} 坐庄` : '';
-      return view.declaration ? `${name(view.declaration.seat)} 亮 ${suitName(view.trumpSuit)}为主${dealerText}` : '无人亮主，即将翻底牌';
+      return view.declaration ? <>{name(view.declaration.seat)} 亮 <TrumpLabel suit={view.trumpSuit} /> 为主{dealerText}</> : '无人亮主，即将翻底牌';
     }
     case 'bottom': return view.dealer === me ? '你是庄家，选 ' + view.config.bottomSize + ' 张扣底' : `${name(view.dealer!)} 正在扣底`;
     case 'callFriend': return view.dealer === me ? '叫朋友' : `${name(view.dealer!)} 正在叫朋友`;
@@ -119,7 +114,7 @@ export function Table({ client }: { client: GameClient }) {
   const me = view.seat;
   const n = view.config.players;
   const [selected, setSelected] = useState<string[]>([]);
-  const [flash, setFlash] = useState<string | null>(null);
+  const [flash, setFlash] = useState<readonly ReactNode[] | null>(null);
   const [linger, setLinger] = useState<{ trick: typeof view.lastTrick; until: number } | null>(null);
   // 「上一轮」按钮：点一下把上一墩每人出的牌摆回桌上看 3 秒，再点一下提前收起
   const [peek, setPeek] = useState(false);
@@ -181,7 +176,7 @@ export function Table({ client }: { client: GameClient }) {
 
   // 事件：闪现文字 + 音效
   useEffect(() => {
-    const texts: string[] = [];
+    const texts: ReactNode[] = [];
     for (const e of client.events as GameEvent[]) {
       switch (e.type) {
         case 'cardsPlayed': if (e.seat !== me) sound.tick(); break;
@@ -195,15 +190,15 @@ export function Table({ client }: { client: GameClient }) {
         }
         case 'friendRevealed': texts.push(e.seat === view.dealer ? '庄家自己打出了朋友牌' : `${name(e.seat)} 是庄家的朋友`); sound.friend(); break;
         case 'throwFailed': texts.push(`${name(e.seat)} 甩牌失败，罚 ${e.penalty} 分`); sound.error(); break;
-        case 'declared': texts.push(`${name(e.seat)} 亮 ${e.count} 张${e.suit ? GLYPH[e.suit] : '王'}`); sound.bark(); break;
-        case 'declaringClosed': if (e.byBottom) texts.push(`无人亮主，翻底牌定${suitName(e.trumpSuit)}`); break;
+        case 'declared': texts.push(<>{name(e.seat)} 亮 {e.count} 张 {e.suit ? <SuitSymbol suit={e.suit} /> : '王'}</>); sound.bark(); break;
+        case 'declaringClosed': if (e.byBottom) texts.push(<>无人亮主，翻底牌定<TrumpLabel suit={e.trumpSuit} /></>); break;
         case 'redeal': texts.push('无人亮主，重新发牌'); break;
         case 'roundRestarted': texts.push('房主重发了本局'); break;
         default: break;
       }
     }
     if (texts.length) {
-      setFlash(texts.join('；'));
+      setFlash(texts);
       if (flashTimer.current) clearTimeout(flashTimer.current);
       flashTimer.current = setTimeout(() => { flashTimer.current = null; setFlash(null); }, 2200);
     }
@@ -235,7 +230,7 @@ export function Table({ client }: { client: GameClient }) {
   const declarableIds = useMemo(() => new Set(declareOpts.flatMap((o) => o.cards.map((c) => c.id))), [declareOpts]);
   const prevDeclareKey = useRef('');
   useEffect(() => {
-    const key = declareOpts.map((o) => o.label).join('|');
+    const key = declareOpts.map((o) => o.key).join('|');
     if (key && key !== prevDeclareKey.current) sound.turn();
     prevDeclareKey.current = key;
   }, [declareOpts]);
@@ -283,10 +278,15 @@ export function Table({ client }: { client: GameClient }) {
     setSelected(cards.map((c) => c.id));
   };
 
-  const friendText = view.friendCalls.map((c) => {
-    const who = c.resolvedSeat === null ? '未现身' : c.resolvedSeat === view.dealer ? '庄家自占' : name(c.resolvedSeat);
-    return `第${CN_NTH[c.nth - 1]}张 ${GLYPH[c.suit]}${rankName(c.rank)} · ${who}`;
-  });
+  const penalties = penaltySummary(view);
+  const showPenalties = penalties !== null && penalties.entries.length > 0;
+  const penaltyRole = (entry: NonNullable<typeof penalties>['entries'][number]) => {
+    if (entry.side === 'pending') return { cls: 'unknown', text: '?', label: '身份未定' };
+    if (entry.side === 'opponent') return { cls: 'opp', text: '闲', label: '闲家' };
+    return entry.seat === (penalties?.kind === 'settled' ? view.lastRound?.dealer : view.dealer)
+      ? { cls: 'dealer', text: '庄', label: '庄家' }
+      : { cls: 'friend', text: '友', label: '庄家朋友' };
+  };
 
   // 当前要显示的出牌：「上一轮」查看中的上一墩，进行中的墩，或停留中的上一墩
   const currentPlays: readonly TrickPlay[] = view.trick?.plays ?? [];
@@ -320,12 +320,17 @@ export function Table({ client }: { client: GameClient }) {
       <header className="topbar">
         <span className="tb-item tb-code" title="房间码">房 <b>{room.code}</b></span>
         <span className="tb-item">第 {view.round} 局</span>
-        <span className="tb-item">级 <b>{rankName(view.level)}</b></span>
+        <span className="tb-item">级牌 <b>{rankName(view.level)}</b></span>
         <button className="tb-item tb-click" onClick={() => setSheet('declarations')} title="亮主记录">
-          主 <b className={view.trumpSuit === 'H' || view.trumpSuit === 'D' ? 'red' : ''}>{view.trumpDecided ? suitName(view.trumpSuit) : '未定'}</b>
+          主 <TrumpLabel suit={view.trumpSuit} decided={view.trumpDecided} />
           <span className="tb-action">记录{view.declarationLog.length > 0 ? ` ${view.declarationLog.length}` : ''}</span>
         </button>
-        <span className="tb-item">闲家 <b>{view.visibleOpponentPoints}</b> / {view.config.levelStep * 2}{view.pendingPoints > 0 && <span className="pending"> 待定 {view.pendingPoints}</span>}</span>
+        <span className="tb-item">闲家抓分 <b>{view.visibleOpponentPoints}</b> / {view.config.levelStep * 2}{view.pendingPoints > 0 && <span className="pending"> 待定抓分 {view.pendingPoints}</span>}</span>
+        {showPenalties && <span className="tb-item tb-penalty" title="已定队伍的甩牌罚分；待定为身份未公开玩家的罚分">
+          罚分对闲家分 <b>{penalties.confirmedDelta > 0 ? '+' : ''}{penalties.confirmedDelta}</b>
+          {penalties.pendingTotal > 0 && <span className="pending"> 待定 {penalties.pendingTotal}</span>}
+          <span className="sr-only">（已定队伍的甩牌罚分；待定为身份未公开玩家的罚分）</span>
+        </span>}
         {myBottom ? (
           <button className="tb-item tb-click" onClick={() => setSheet('bottom')} title="看我扣的底">底 {view.bottomCount}<span className="tb-action">看底</span></button>
         ) : (
@@ -359,27 +364,40 @@ export function Table({ client }: { client: GameClient }) {
         </div></Modal>
       )}
       {/* 朋友牌和闲家分牌合成一行、分牌用小号牌，少占牌桌的高度 */}
-      {(view.friendCalls.length > 0 || view.opponentPointCards.length > 0 || view.pendingPointCards.length > 0) && (
+      {(view.friendCalls.length > 0 || view.opponentPointCards.length > 0 || view.pendingPointCards.length > 0 || showPenalties) && (
         <div className="info-line">
-          {view.friendCalls.length > 0 && <span className="friends-line">朋友牌：{friendText.join('　')}</span>}
+          {view.friendCalls.length > 0 && <span className="friends-line">朋友牌 {view.friendCalls.map((c, i) => <span key={`${c.suit}${c.rank}#${c.nth}`}>
+            {i > 0 && '　'}第{CN_NTH[c.nth - 1]}张 <CardNotation suit={c.suit} rank={c.rank} /> · <span className={c.resolvedSeat === null ? 'friend-pending' : 'friend-name'}>{c.resolvedSeat === null ? '未现身' : c.resolvedSeat === view.dealer ? '庄家自占' : name(c.resolvedSeat)}</span>
+          </span>)}</span>}
           {(view.opponentPointCards.length > 0 || view.pendingPointCards.length > 0) && (
             <span className="points-line">
               <span className="points-label">闲家分牌</span>
-              {pointSummary(view.opponentPointCards, view.trumpSuit).map((p) => <span key={p.key} className={`pt ${p.red ? 'red' : ''}`}>{p.label}</span>)}
+              {summarizePointCards(view.opponentPointCards, view.trumpSuit).map((p) => <CardNotation key={`${p.suit}${p.rank}`} {...p} />)}
               {view.pendingPointCards.length > 0 && (
                 <span className="pt-pending">
-                  待定{pointSummary(view.pendingPointCards, view.trumpSuit).map((p) => <span key={p.key} className={`pt ${p.red ? 'red' : ''}`}>{p.label}</span>)}
+                  待定{summarizePointCards(view.pendingPointCards, view.trumpSuit).map((p) => <CardNotation key={`${p.suit}${p.rank}`} {...p} />)}
                 </span>
               )}
             </span>
           )}
+          {showPenalties && <span className="penalty-line" role="group" aria-label="甩牌罚分明细">
+            <span className="points-label">罚分明细</span>
+            {penalties.entries.map(entry => {
+              const role = penaltyRole(entry);
+              return <span key={entry.seat} className="pen-entry" data-penalty-seat={entry.seat}>
+                <span className={`role role-mini ${role.cls}`} aria-hidden="true">{role.text}</span><span className="sr-only">{role.label}</span>
+                <span className="pen-name">{name(entry.seat)}</span><b className="pen-amt">罚{entry.amount}</b>
+                {entry.side === 'pending' && <span className="pen-pending">待定</span>}
+              </span>;
+            })}
+          </span>}
         </div>
       )}
 
         {/* 阶段提示与操作独立占位，避免遮挡玩家和出牌。 */}
         <div className="phase-panel">
           <div className={`status ${flash ? 'flash' : ''} ${peeking ? 'peeking' : ''}`}>
-            {peeking ? `上一轮：${name(peeking.winner)} 赢${peeking.points ? `，${peeking.points} 分` : ''}` : (flash ?? statusText(view, name))}
+            {peeking ? `上一轮：${name(peeking.winner)} 赢${peeking.points ? `，${peeking.points} 分` : ''}` : (flash ? flash.map((text, i) => <Fragment key={i}>{i > 0 && '；'}{text}</Fragment>) : statusContent(view, name))}
           </div>
           {view.declaration && (view.phase === 'dealing' || view.phase === 'declaring') && (
             <div className="declared"><span>{name(view.declaration.seat)} 亮</span><CardRow cards={view.declaration.cards} small /></div>
@@ -387,7 +405,7 @@ export function Table({ client }: { client: GameClient }) {
           {declareOpts.length > 0 && (
             <div className="declare-hints">
               {declareOpts.map((o) => (
-                <button key={o.label} className="ghost small declare-btn" disabled={!client.connected} onClick={() => { send({ t: 'declare', cards: o.cards.map((c) => c.id) }); setSelected([]); }}>
+                <button key={o.key} className="ghost small declare-btn" disabled={!client.connected} onClick={() => { send({ t: 'declare', cards: o.cards.map((c) => c.id) }); setSelected([]); }}>
                   {o.label}
                 </button>
               ))}
@@ -403,14 +421,15 @@ export function Table({ client }: { client: GameClient }) {
           const s = room.seats[seat];
           const isTurn = view.currentTurn === seat;
           return (
-            <div key={seat} data-seat={seat} className={`badge ${isTurn ? 'turn' : ''} ${role.cls}`} style={{ ...pct(posOf(seat)), top: `clamp(18px, ${posOf(seat).y}%, calc(100% - 18px))` }}>
+            <div key={seat} data-seat={seat} className={`badge ${posOf(seat).x <= 12 || posOf(seat).x >= 88 ? 'seat-side' : ''} ${isTurn ? 'turn' : ''} ${role.cls}`} style={{ ...pct(posOf(seat)), top: `clamp(28px, ${posOf(seat).y}%, calc(100% - 28px))` }}>
               <span className="b-avatar"><Avatar name={name(seat)} isBot={Boolean(s?.isBot)} size={40} /><span className={`role role-dot ${role.cls}`}>{role.text}</span></span>
-              <span className="b-name">{name(seat)}</span>
-              <span className="b-meta">
-                <span className="b-level">{rankName(levelRank(view.levels[seat] ?? 0, view.config))}</span>
-                <span className="b-count">{view.handCounts[seat]}</span>
+              <span className="b-name-row"><span className="b-name">{name(seat)}</span>
                 {shownLeader === seat && <span className="b-lead" title="这一墩是他先出的">首</span>}
                 {s && !s.connected && <span className="b-off">离线</span>}
+              </span>
+              <span className="b-meta">
+                <span className="b-level" aria-label={`${name(seat)}当前打${rankName(levelRank(view.levels[seat] ?? 0, view.config))}`}>打{rankName(levelRank(view.levels[seat] ?? 0, view.config))}</span>
+                <span className="b-count">{view.handCounts[seat]}张</span>
               </span>
             </div>
           );
@@ -448,8 +467,8 @@ export function Table({ client }: { client: GameClient }) {
         <div className="me-head">
           <span className={`role ${roleOf(view, me).cls}`}>{roleOf(view, me).text}</span>
           <span className="b-name">{name(me)}</span>
-          <span className="b-level">{rankName(levelRank(view.levels[me] ?? 0, view.config))}</span>
-          <span className="b-count">{view.hand.length}</span>
+          <span className="b-level" aria-label={`${name(me)}当前打${rankName(levelRank(view.levels[me] ?? 0, view.config))}`}>打{rankName(levelRank(view.levels[me] ?? 0, view.config))}</span>
+          <span className="b-count">{view.hand.length}张</span>
           {shownLeader === me && <span className="b-lead" title="这一墩是你先出的">首</span>}
           {playHint && <span className="play-hint">{playHint}</span>}
           {selected.length > 0 && <button className="ghost tiny" onClick={() => setSelected([])}>清除</button>}

@@ -1,6 +1,7 @@
-import { cardPoints, sortCardsDesc, suitName, type Card, type PlayerView, type Seat } from '@shengji/engine';
+import { cardPoints, sortCardsDesc, type Card, type PlayerView, type Seat } from '@shengji/engine';
 import { Modal as Sheet } from './Modal.tsx';
 import { CardRow } from './CardView.tsx';
+import { TrumpLabel } from './SuitText.tsx';
 
 const KIND_TEXT = { declare: '亮主', reinforce: '加固', override: '反主' } as const;
 
@@ -20,21 +21,21 @@ export function DeclarationLogSheet({ view, name, onClose }: { view: PlayerView;
                   <span className="dl-who">无人亮主</span>
                   <span className="dl-kind">翻底</span>
                   {e.card && <CardRow cards={[e.card]} small />}
-                  <span className="dl-suit">定{suitName(e.suit)}</span>
+                  <span className="dl-suit">定<TrumpLabel suit={e.suit} /></span>
                 </>
               ) : (
                 <>
                   <span className="dl-who">{name(e.seat)}</span>
                   <span className={`dl-kind ${e.kind}`}>{KIND_TEXT[e.kind]}</span>
                   <CardRow cards={e.cards} small />
-                  <span className="dl-suit">{suitName(e.suit)}</span>
+                  <span className="dl-suit"><TrumpLabel suit={e.suit} /></span>
                 </>
               )}
             </li>
           ))}
         </ol>
       )}
-      {view.trumpDecided && <div className="hint">本局主：{suitName(view.trumpSuit)}{view.dealer !== null ? `，庄家 ${name(view.dealer)}` : ''}</div>}
+      {view.trumpDecided && <div className="hint">本局主：<TrumpLabel suit={view.trumpSuit} />{view.dealer !== null ? `，庄家 ${name(view.dealer)}` : ''}</div>}
     </Sheet>
   );
 }

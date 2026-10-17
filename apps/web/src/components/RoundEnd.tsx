@@ -27,7 +27,7 @@ export function RoundEnd({ view, room, connected = true, onNext, onReplay, onLea
             <tr><td>闲家</td><td>{r.opponents.map(name).join('、')}</td></tr>
             <tr><td>闲家抓分</td><td>{r.capturedByOpponents}</td></tr>
             <tr><td>抠底</td><td>{r.bottomBonus > 0 ? `${r.bottomPoints} × ${r.bottomMultiplier} = ${r.bottomBonus}` : '无'}</td></tr>
-            {r.penaltyDelta !== 0 && <tr><td>甩牌罚分</td><td>{r.penaltyDelta > 0 ? '+' : ''}{r.penaltyDelta}</td></tr>}
+            {(r.penaltyDelta !== 0 || (r.round === view.round && view.penalties.some(p => p > 0))) && <tr><td>甩牌罚分</td><td>{r.penaltyDelta > 0 ? '+' : ''}{r.penaltyDelta}</td></tr>}
             <tr><td><b>闲家总分</b></td><td><b>{r.opponentPoints}</b></td></tr>
           </tbody>
         </table>
