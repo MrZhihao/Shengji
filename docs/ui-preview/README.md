@@ -49,23 +49,23 @@ SEARCH_WORKERS=0 node scripts/ui-preview.ts
 
 ## 方案预览（设计参考）
 
-![方案大厅](proposal-home.png)
-![方案等候房](proposal-lobby.png)
-![方案牌桌](proposal-table.png)
-![方案多排手牌](proposal-hand.png)
+![方案大厅](proposal-home.jpg)
+![方案等候房](proposal-lobby.jpg)
+![方案牌桌](proposal-table.jpg)
+![方案多排手牌](proposal-hand.jpg)
 
 ## 实际应用截图
 
-![实际大厅](implementation-home.png)
-![实际等候房](implementation-lobby.png)
-![实际牌桌](implementation-table.png)
+![实际大厅](implementation-home.jpg)
+![实际等候房](implementation-lobby.jpg)
+![实际牌桌](implementation-table.jpg)
 
 | 手机 26 张双排 | 庄家取底 38 张三排 |
 | --- | --- |
-| ![26 张](implementation-phone-26.png) | ![38 张](implementation-bottom-38.png) |
+| ![26 张](implementation-phone-26.jpg) | ![38 张](implementation-bottom-38.jpg) |
 
-![实际横屏](implementation-landscape.png)
+![实际横屏](implementation-landscape.jpg)
 
 | 结算 | 回放 |
 | --- | --- |
-| ![结算](implementation-result.png) | ![回放](implementation-replay.png) |
+| ![结算](implementation-result.jpg) | ![回放](implementation-replay.jpg) |
