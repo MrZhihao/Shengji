@@ -2,6 +2,7 @@
 import { useMemo, useState } from 'react';
 import { applyAction, rankName, sortCardsDesc, suitName, type Card, type GameState, type Seat } from '@shengji/engine';
 import type { RoundReplay } from '@shengji/protocol';
+import { Modal } from '../components/Modal.tsx';
 import { CardRow } from '../components/CardView.tsx';
 
 interface TrickView {
@@ -74,12 +75,7 @@ export function Replay({ replay, onClose }: { replay: RoundReplay; onClose: () =
   const roleCls = (seat: Seat) => (seat === st.dealer ? 'dealer' : team.includes(seat) ? 'friend' : 'opp');
   const roleTxt = (seat: Seat) => (seat === st.dealer ? '庄' : team.includes(seat) ? '友' : '闲');
   return (
-    <div className="overlay replay">
-      <div className="sheet">
-        <div className="sheet-head">
-          <div className="sheet-title">第 {replay.round} 局回放</div>
-          <button className="ghost small" onClick={onClose}>关闭</button>
-        </div>
+    <Modal title={`第 ${replay.round} 局回放`} onClose={onClose} className="replay">
         <div className="hint">
           级牌 {rankName(st.level)} · 主 {suitName(st.trumpSuit)} · 庄家 {st.dealer === null ? '—' : name(st.dealer)}
           {st.friendCalls.length > 0 && ` · 朋友牌 ${st.friendCalls.map((c) => `第${['一', '二', '三'][c.nth - 1]}张${suitName(c.suit)}${rankName(c.rank)}`).join('、')}`}
@@ -122,7 +118,6 @@ export function Replay({ replay, onClose }: { replay: RoundReplay; onClose: () =
             </div>
           ))}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

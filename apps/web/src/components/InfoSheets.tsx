@@ -1,21 +1,8 @@
 import { cardPoints, sortCardsDesc, suitName, type Card, type PlayerView, type Seat } from '@shengji/engine';
+import { Modal as Sheet } from './Modal.tsx';
 import { CardRow } from './CardView.tsx';
 
 const KIND_TEXT = { declare: '亮主', reinforce: '加固', override: '反主' } as const;
-
-function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return (
-    <div className="overlay info-sheet" onClick={onClose}>
-      <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="sheet-head">
-          <div className="sheet-title">{title}</div>
-          <button className="ghost small" onClick={onClose}>关闭</button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
 
 /** 本局亮主、加固、反主、翻底定主的全部记录，按先后排 */
 export function DeclarationLogSheet({ view, name, onClose }: { view: PlayerView; name: (s: Seat) => string; onClose: () => void }) {

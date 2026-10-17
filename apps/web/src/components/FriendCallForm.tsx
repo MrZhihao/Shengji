@@ -7,7 +7,7 @@ const NTH = ['第一张', '第二张', '第三张'];
 
 interface Call { suit: Suit; rank: number; nth: number }
 
-export function FriendCallForm({ view, send }: { view: PlayerView; send: (m: ClientMessage) => void }) {
+export function FriendCallForm({ view, send, disabled = false }: { view: PlayerView; disabled?: boolean; send: (m: ClientMessage) => void }) {
   const suits = SUITS.filter((s) => s !== view.trumpSuit);
   const ranks = [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2].filter((r) => r !== view.level);
   const [calls, setCalls] = useState<Call[]>(() =>
@@ -20,19 +20,19 @@ export function FriendCallForm({ view, send }: { view: PlayerView; send: (m: Cli
       <div className="panel-title">叫朋友</div>
       {calls.map((c, i) => (
         <div key={i} className="friend-row">
-          <select value={c.nth} onChange={(e) => update(i, { nth: Number(e.target.value) })}>
+          <select aria-label={`朋友 ${i + 1} 的出现次序`} value={c.nth} onChange={(e) => update(i, { nth: Number(e.target.value) })}>
             {NTH.slice(0, view.config.decks).map((n, k) => <option key={k} value={k + 1}>{n}</option>)}
           </select>
-          <select value={c.suit} onChange={(e) => update(i, { suit: e.target.value as Suit })}>
+          <select aria-label={`朋友 ${i + 1} 的花色`} value={c.suit} onChange={(e) => update(i, { suit: e.target.value as Suit })}>
             {suits.map((s) => <option key={s} value={s}>{GLYPH[s]}</option>)}
           </select>
-          <select value={c.rank} onChange={(e) => update(i, { rank: Number(e.target.value) })}>
+          <select aria-label={`朋友 ${i + 1} 的点数`} value={c.rank} onChange={(e) => update(i, { rank: Number(e.target.value) })}>
             {ranks.map((r) => <option key={r} value={r}>{rankName(r)}</option>)}
           </select>
         </div>
       ))}
       {dup && <div className="hint warn">两个朋友牌不能完全相同</div>}
-      <button className="primary" disabled={dup} onClick={() => send({ t: 'callFriend', calls })}>确定</button>
+      <button className="primary" disabled={disabled || dup} onClick={() => send({ t: 'callFriend', calls })}>确定</button>
     </div>
   );
 }
